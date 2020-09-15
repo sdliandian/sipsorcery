@@ -116,7 +116,6 @@ ClientBin/
 *~
 *.dbmdl
 *.[Pp]ublish.xml
-*.pfx
 *.publishsettings
 
 # RIA/Silverlight projects
@@ -171,3 +170,8 @@ bower_components
 *.vs
 
 docfx/*
+**/.vscode*
+*.sdp
+**/.ionide
+.fake
+.ionide

@@ -4,10 +4,10 @@
 // Description: Base class for SIP dialogues. 
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 20 Oct 2005	Aaron Clauson	Created (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com).
+// 20 Oct 2005	Aaron Clauson	Created, Dublin, Ireland.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
@@ -15,8 +15,8 @@
 
 using System;
 using System.Net;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.SIP
 {
@@ -25,6 +25,7 @@ namespace SIPSorcery.SIP
         Unknown = 0,
         Early = 1,
         Confirmed = 2,
+        Terminated = 3
     }
 
     public enum SIPDialogueTransferModesEnum
@@ -40,7 +41,7 @@ namespace SIPSorcery.SIP
     /// </summary>
     /// <remarks>
     /// The standard states that there are two independent CSeq's for a dialogue: one for requests from the UAC and for requests
-    /// from the UAS. In practice it's been noted that is a UAS (initial UAS) sends an in-dialogue request with a CSeq less than the
+    /// from the UAS. In practice it's been noted that if a UAS (initial UAS) sends an in-dialogue request with a CSeq less than the
     /// UAC's CSeq it can cause problems. To avoid this issue when generating requests the remote CSeq is always used.
     /// </remarks>
     public class SIPDialogue
@@ -52,8 +53,6 @@ namespace SIPSorcery.SIP
         private static readonly int m_defaultSIPPort = SIPConstants.DEFAULT_SIP_PORT;
 
         public Guid Id { get; set; }                                // Id for persistence, NOT used for SIP call purposes.
-        public string Owner { get; set; }                           // In cases where ownership needs to be set on the dialogue this value can be used. Does not have any effect on the operation of the dialogue and is for info only.
-        public string AdminMemberId { get; set; }
         public string CallId { get; set; }
         public SIPRouteSet RouteSet { get; set; }
         public SIPUserField LocalUserField { get; set; }            // To header for a UAS, From header for a UAC.
@@ -71,18 +70,21 @@ namespace SIPSorcery.SIP
         public int CallDurationLimit { get; set; }                  // If non-zero indicates the dialogue established should only be permitted to stay up for this many seconds.
         public string ProxySendFrom { get; set; }                   // If set this is the socket the upstream proxy received the call on.
         public SIPDialogueTransferModesEnum TransferMode { get; set; }  // Specifies how the dialogue will handle REFER requests (transfers).
-        public SIPCallDirection Direction { get; set; }              // Indicates whether the dialogue was created by a ingress or egress call.
 
-        // User informational fields. They don't affect the operation of the dialogue but allow the user to optionally attach descriptive fields to it.
-        //public string SwitchboardCallerDescription { get; set; }
-        //public string SwitchboardDescription { get; set; }
-        public string SwitchboardOwner { get; set; }
-        public string SwitchboardLineName { get; set; }
+        /// <summary>
+        /// Indicates whether the dialogue was created by a ingress or egress call.
+        /// </summary>
+        public SIPCallDirection Direction { get; set; }
+
         public string CRMPersonName { get; set; }
         public string CRMCompanyName { get; set; }
         public string CRMPictureURL { get; set; }
 
-        public int ReinviteDelay = 0;      // Used as a mechanism to send an immeidate or slightly delayed re-INVITE request when a call is answered as an attempt to help solve audio issues.
+        /// <summary>
+        /// Used as a flag to indicate whether to send an immediate or slightly delayed re-INVITE request 
+        /// when a call is answered as an attempt to help solve audio issues.
+        /// </summary>
+        public int ReinviteDelay = 0;
 
         public string DialogueName
         {
@@ -118,6 +120,8 @@ namespace SIPSorcery.SIP
 
         public SIPDialogueStateEnum DialogueState = SIPDialogueStateEnum.Unknown;
 
+        internal SIPNonInviteTransaction m_byeTransaction;
+
         public SIPDialogue() { }
 
         public SIPDialogue(
@@ -130,8 +134,6 @@ namespace SIPSorcery.SIP
             string localTag,
             string remoteTag,
             Guid cdrId,
-            string owner,
-            string adminMemberId,
             string sdp,
             string remoteSDP)
         {
@@ -146,8 +148,6 @@ namespace SIPSorcery.SIP
             CSeq = cseq;
             RemoteTarget = remoteTarget;
             CDRId = cdrId;
-            Owner = owner;
-            AdminMemberId = adminMemberId;
             SDP = sdp;
             RemoteSDP = remoteSDP;
             Inserted = DateTimeOffset.UtcNow;
@@ -160,31 +160,26 @@ namespace SIPSorcery.SIP
         /// in the From header.
         /// </summary>
         public SIPDialogue(
-            UASInviteTransaction uasInviteTransaction,
-            string owner,
-            string adminMemberId)
+            UASInviteTransaction uasInviteTransaction)
         {
             Id = Guid.NewGuid();
 
             CallId = uasInviteTransaction.TransactionRequest.Header.CallId;
-            RouteSet = (uasInviteTransaction.TransactionFinalResponse != null && uasInviteTransaction.TransactionFinalResponse.Header.RecordRoutes != null) ? uasInviteTransaction.TransactionFinalResponse.Header.RecordRoutes.Reversed() : null;
+            //RouteSet = (uasInviteTransaction.TransactionFinalResponse != null && uasInviteTransaction.TransactionFinalResponse.Header.RecordRoutes != null) ? uasInviteTransaction.TransactionFinalResponse.Header.RecordRoutes.Reversed() : null;
+            RouteSet = (uasInviteTransaction.TransactionFinalResponse != null && uasInviteTransaction.TransactionFinalResponse.Header.RecordRoutes != null) ? uasInviteTransaction.TransactionFinalResponse.Header.RecordRoutes : null;
             LocalUserField = uasInviteTransaction.TransactionFinalResponse.Header.To.ToUserField;
             LocalTag = uasInviteTransaction.TransactionFinalResponse.Header.To.ToTag;
             RemoteUserField = uasInviteTransaction.TransactionFinalResponse.Header.From.FromUserField;
             RemoteTag = uasInviteTransaction.TransactionFinalResponse.Header.From.FromTag;
             CSeq = uasInviteTransaction.TransactionRequest.Header.CSeq;
-            CDRId = uasInviteTransaction.CDR.CDRId;
-            Owner = owner;
-            AdminMemberId = adminMemberId;
+            CDRId = uasInviteTransaction.CDR != null ? uasInviteTransaction.CDR.CDRId : Guid.Empty;
             ContentType = uasInviteTransaction.TransactionFinalResponse.Header.ContentType;
             SDP = uasInviteTransaction.TransactionFinalResponse.Body;
-            RemoteSDP = uasInviteTransaction.TransactionRequest.Body;
+            RemoteSDP = uasInviteTransaction.TransactionRequest.Body ?? uasInviteTransaction.AckRequest.Body;
             Inserted = DateTimeOffset.UtcNow;
             Direction = SIPCallDirection.In;
 
-            //DialogueId = GetDialogueId(CallId, LocalTag, RemoteTag);
-
-            RemoteTarget = new SIPURI(uasInviteTransaction.TransactionRequest.URI.Scheme, SIPEndPoint.ParseSIPEndPoint(uasInviteTransaction.RemoteEndPoint.ToString()));
+            RemoteTarget = new SIPURI(uasInviteTransaction.TransactionRequest.URI.Scheme, uasInviteTransaction.TransactionRequest.RemoteSIPEndPoint.CopyOf());
             ProxySendFrom = uasInviteTransaction.TransactionRequest.Header.ProxyReceivedOn;
             if (uasInviteTransaction.TransactionRequest.Header.Contact != null && uasInviteTransaction.TransactionRequest.Header.Contact.Count > 0)
             {
@@ -207,10 +202,7 @@ namespace SIPSorcery.SIP
         /// acting as a client user agent the local fields are contained in the From header and the remote fields are 
         /// in the To header.
         /// </summary>
-        public SIPDialogue(
-          UACInviteTransaction uacInviteTransaction,
-          string owner,
-          string adminMemberId)
+        public SIPDialogue(UACInviteTransaction uacInviteTransaction)
         {
             Id = Guid.NewGuid();
 
@@ -221,9 +213,7 @@ namespace SIPSorcery.SIP
             RemoteUserField = uacInviteTransaction.TransactionFinalResponse.Header.To.ToUserField;
             RemoteTag = uacInviteTransaction.TransactionFinalResponse.Header.To.ToTag;
             CSeq = uacInviteTransaction.TransactionRequest.Header.CSeq;
-            CDRId = uacInviteTransaction.CDR.CDRId;
-            Owner = owner;
-            AdminMemberId = adminMemberId;
+            CDRId = (uacInviteTransaction.CDR != null) ? uacInviteTransaction.CDR.CDRId : Guid.Empty;
             ContentType = uacInviteTransaction.TransactionRequest.Header.ContentType;
             SDP = uacInviteTransaction.TransactionRequest.Body;
             RemoteSDP = uacInviteTransaction.TransactionFinalResponse.Body;
@@ -231,7 +221,14 @@ namespace SIPSorcery.SIP
             Direction = SIPCallDirection.Out;
 
             // Set the dialogue remote target and take care of mangling if an upstream proxy has indicated it's required.
-            RemoteTarget = new SIPURI(uacInviteTransaction.TransactionRequest.URI.Scheme, SIPEndPoint.ParseSIPEndPoint(uacInviteTransaction.RemoteEndPoint.ToString()));
+            if (uacInviteTransaction.TransactionFinalResponse != null)
+            {
+                RemoteTarget = new SIPURI(uacInviteTransaction.TransactionRequest.URI.Scheme, uacInviteTransaction.TransactionFinalResponse.RemoteSIPEndPoint.CopyOf());
+            }
+            else
+            {
+                RemoteTarget = new SIPURI(uacInviteTransaction.TransactionRequest.URI.Scheme, uacInviteTransaction.TransactionRequest.RemoteSIPEndPoint.CopyOf());
+            }
             ProxySendFrom = uacInviteTransaction.TransactionFinalResponse.Header.ProxyReceivedOn;
             if (uacInviteTransaction.TransactionFinalResponse.Header.Contact != null && uacInviteTransaction.TransactionFinalResponse.Header.Contact.Count > 0)
             {
@@ -255,8 +252,6 @@ namespace SIPSorcery.SIP
         /// </summary>
         public SIPDialogue(
           SIPRequest nonInviteRequest,
-          string owner,
-          string adminMemberId,
           string toTag)
         {
             Id = Guid.NewGuid();
@@ -269,8 +264,6 @@ namespace SIPSorcery.SIP
             LocalUserField.Parameters.Set("tag", toTag);
             LocalTag = toTag;
             CSeq = nonInviteRequest.Header.CSeq;
-            Owner = owner;
-            AdminMemberId = adminMemberId;
             Inserted = DateTimeOffset.UtcNow;
             Direction = SIPCallDirection.Out;
 
@@ -290,20 +283,18 @@ namespace SIPSorcery.SIP
             }
         }
 
-        /*public static string GetDialogueId(string callId, string localTag, string remoteTag)
-        {
-            return Crypto.GetSHAHashAsString(callId + localTag + remoteTag);
-        }
-
-        public static string GetDialogueId(SIPHeader sipHeader)
-        {
-            return Crypto.GetSHAHashAsString(sipHeader.CallId + sipHeader.To.ToTag + sipHeader.From.FromTag);
-        }*/
-
+        /// <summary>
+        /// Generates a BYE request for this dialog and forwards it to the remote call party.
+        /// This has the effect of hanging up the call.
+        /// </summary>
+        /// <param name="sipTransport">The transport layer to use for sending the request.</param>
+        /// <param name="outboundProxy">Optional. If set an end point that the BYE request will be directly forwarded to.</param>
         public void Hangup(SIPTransport sipTransport, SIPEndPoint outboundProxy)
         {
             try
             {
+                DialogueState = SIPDialogueStateEnum.Terminated;
+
                 SIPEndPoint byeOutboundProxy = null;
                 if (outboundProxy != null && IPAddress.IsLoopback(outboundProxy.Address))
                 {
@@ -318,51 +309,40 @@ namespace SIPSorcery.SIP
                     byeOutboundProxy = outboundProxy;
                 }
 
-                SIPEndPoint localEndPoint = (byeOutboundProxy != null) ?
-                    sipTransport.GetDefaultSIPEndPoint(byeOutboundProxy) :
-                    sipTransport.GetDefaultSIPEndPoint(GetRemoteTargetEndpoint());
-
-                SIPRequest byeRequest = GetByeRequest(localEndPoint);
-                SIPNonInviteTransaction byeTransaction = sipTransport.CreateNonInviteTransaction(byeRequest, null, localEndPoint, byeOutboundProxy);
-
-                byeTransaction.SendReliableRequest();
+                SIPRequest byeRequest = GetInDialogRequest(SIPMethodsEnum.BYE);
+                m_byeTransaction = new SIPNonInviteTransaction(sipTransport, byeRequest, byeOutboundProxy);
+                m_byeTransaction.SendRequest();
             }
             catch (Exception excp)
             {
                 logger.LogError("Exception SIPDialogue Hangup. " + excp.Message);
-                throw;
             }
         }
 
-        private SIPProtocolsEnum GetRemoteTargetProtocol()
+        /// <summary>
+        /// Builds a basic SIP request with the header fields set to correctly identify it as an 
+        /// in dialog request. Calling this method also increments the dialog's local CSeq counter.
+        /// This is safe to do even if the request does not end up being sent.
+        /// </summary>
+        /// <param name="method">The method of the SIP request to create.</param>
+        /// <returns>An in dialog SIP request.</returns>
+        public SIPRequest GetInDialogRequest(SIPMethodsEnum method)
         {
-            SIPURI dstURI = (RouteSet == null) ? RemoteTarget : RouteSet.TopRoute.URI;
-            return dstURI.Protocol;
-        }
+            CSeq++;
 
-        private SIPEndPoint GetRemoteTargetEndpoint()
-        {
-            SIPURI dstURI = (RouteSet == null) ? RemoteTarget : RouteSet.TopRoute.URI;
-            return dstURI.ToSIPEndPoint();
-        }
+            SIPRequest inDialogRequest = new SIPRequest(method, RemoteTarget);
+            SIPFromHeader fromHeader = SIPFromHeader.ParseFromHeader(LocalUserField.ToString());
+            SIPToHeader toHeader = SIPToHeader.ParseToHeader(RemoteUserField.ToString());
+            int cseq = CSeq;
 
-        private SIPRequest GetByeRequest(SIPEndPoint localSIPEndPoint)
-        {
-            SIPRequest byeRequest = new SIPRequest(SIPMethodsEnum.BYE, RemoteTarget);
-            SIPFromHeader byeFromHeader = SIPFromHeader.ParseFromHeader(LocalUserField.ToString());
-            SIPToHeader byeToHeader = SIPToHeader.ParseToHeader(RemoteUserField.ToString());
-            int cseq = CSeq + 1;
+            SIPHeader header = new SIPHeader(fromHeader, toHeader, cseq, CallId);
+            header.CSeqMethod = method;
+            inDialogRequest.Header = header;
+            inDialogRequest.Header.Routes = RouteSet;
+            inDialogRequest.Header.ProxySendFrom = ProxySendFrom;
+            inDialogRequest.Header.Vias.PushViaHeader(SIPViaHeader.GetDefaultSIPViaHeader());
 
-            SIPHeader byeHeader = new SIPHeader(byeFromHeader, byeToHeader, cseq, CallId);
-            byeHeader.CSeqMethod = SIPMethodsEnum.BYE;
-            byeRequest.Header = byeHeader;
-            byeRequest.Header.Routes = RouteSet;
-            byeRequest.Header.ProxySendFrom = ProxySendFrom;
-
-            SIPViaHeader viaHeader = new SIPViaHeader(localSIPEndPoint, CallProperties.CreateBranchId());
-            byeRequest.Header.Vias.PushViaHeader(viaHeader);
-
-            return byeRequest;
+            return inDialogRequest;
         }
     }
 }

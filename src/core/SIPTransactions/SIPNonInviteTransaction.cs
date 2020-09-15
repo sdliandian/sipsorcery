@@ -1,17 +1,21 @@
 //-----------------------------------------------------------------------------
 // Filename: SIPnonInviteTransaction.cs
 //
-// Description: SIP Transaction for all non-INVITE transactions where no dialog is required.
+// Description: SIP Transaction for all non-INVITE transactions where no dialog 
+// is required.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 // 
 // History:
-// 18 May 2008	Aaron Clauson	Created (aaron@sipsorcery.com), SIPSorcery Ltd, Hobart, Australia (www.sipsorcery.com)
+// 18 May 2008	Aaron Clauson	Created, Hobart, Australia.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
 //-----------------------------------------------------------------------------
+
+using System.Net.Sockets;
+using System.Threading.Tasks;
 
 namespace SIPSorcery.SIP
 {
@@ -23,8 +27,8 @@ namespace SIPSorcery.SIP
         public event SIPTransactionRequestReceivedDelegate NonInviteRequestReceived;
         public event SIPTransactionRequestRetransmitDelegate NonInviteTransactionRequestRetransmit;
 
-        internal SIPNonInviteTransaction(SIPTransport sipTransport, SIPRequest sipRequest, SIPEndPoint dstEndPoint, SIPEndPoint localSIPEndPoint, SIPEndPoint outboundProxy)
-            : base(sipTransport, sipRequest, dstEndPoint, localSIPEndPoint, outboundProxy)
+        public SIPNonInviteTransaction(SIPTransport sipTransport, SIPRequest sipRequest, SIPEndPoint outboundProxy)
+            : base(sipTransport, sipRequest, outboundProxy)
         {
             TransactionType = SIPTransactionTypesEnum.NonInvite;
             TransactionRequestReceived += SIPNonInviteTransaction_TransactionRequestReceived;
@@ -33,6 +37,8 @@ namespace SIPSorcery.SIP
             TransactionTimedOut += SIPNonInviteTransaction_TransactionTimedOut;
             TransactionRemoved += SIPNonInviteTransaction_TransactionRemoved;
             TransactionRequestRetransmit += SIPNonInviteTransaction_TransactionRequestRetransmit;
+
+            sipTransport.AddTransaction(this);
         }
 
         private void SIPNonInviteTransaction_TransactionRemoved(SIPTransaction transaction)
@@ -49,24 +55,34 @@ namespace SIPSorcery.SIP
             NonInviteTransactionTimedOut?.Invoke(this);
         }
 
-        private void SIPNonInviteTransaction_TransactionRequestReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPRequest sipRequest)
+        private Task<SocketError> SIPNonInviteTransaction_TransactionRequestReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPRequest sipRequest)
         {
-            NonInviteRequestReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipRequest);
+            return NonInviteRequestReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipRequest);
         }
 
-        private void SIPNonInviteTransaction_TransactionInformationResponseReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPResponse sipResponse)
+        private Task<SocketError> SIPNonInviteTransaction_TransactionInformationResponseReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPResponse sipResponse)
         {
-            NonInviteTransactionInfoResponseReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipResponse);
+            return NonInviteTransactionInfoResponseReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipResponse);
         }
 
-        private void SIPNonInviteTransaction_TransactionFinalResponseReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPResponse sipResponse)
+        private Task<SocketError> SIPNonInviteTransaction_TransactionFinalResponseReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPResponse sipResponse)
         {
-            NonInviteTransactionFinalResponseReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipResponse);
+            return NonInviteTransactionFinalResponseReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipResponse);
         }
 
         private void SIPNonInviteTransaction_TransactionRequestRetransmit(SIPTransaction sipTransaction, SIPRequest sipRequest, int retransmitNumber)
         {
             NonInviteTransactionRequestRetransmit?.Invoke(sipTransaction, sipRequest, retransmitNumber);
+        }
+
+        public void SendRequest()
+        {
+            base.SendReliableRequest();
+        }
+
+        public void SendResponse(SIPResponse finalResponse)
+        {
+            base.SendFinalResponse(finalResponse);
         }
     }
 }

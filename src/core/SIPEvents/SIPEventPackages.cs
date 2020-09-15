@@ -2,7 +2,7 @@
 // FileName: SIPEventPackages.cs
 //
 // Description:
-// Data structures and types realted to RFC3265 "Session Initiation Protocol (SIP)-Specific Event Notification".
+// Data structures and types related to RFC3265 "Session Initiation Protocol (SIP)-Specific Event Notification".
 //
 // Author(s):
 // Aaron Clauson
@@ -48,7 +48,7 @@ namespace SIPSorcery.SIP
             {
                 return false;
             }
-            else if (value.ToLower() == "dialog" || value.ToLower() == "message-summary" || 
+            else if (value.ToLower() == "dialog" || value.ToLower() == "message-summary" ||
                 value.ToLower() == "presence" || value.ToLower() == "refer")
             {
                 return true;
@@ -70,11 +70,16 @@ namespace SIPSorcery.SIP
                 string trimmedValue = value.Trim().ToLower();
                 switch (trimmedValue)
                 {
-                    case "dialog": return SIPEventPackage.Dialog;
-                    case "message-summary": return SIPEventPackage.MessageSummary;
-                    case "presence": return SIPEventPackage.Presence;
-                    case "refer": return SIPEventPackage.Refer;
-                    default: throw new ArgumentException("The value is not valid for a SIPEventPackage.");
+                    case "dialog":
+                        return SIPEventPackage.Dialog;
+                    case "message-summary":
+                        return SIPEventPackage.MessageSummary;
+                    case "presence":
+                        return SIPEventPackage.Presence;
+                    case "refer":
+                        return SIPEventPackage.Refer;
+                    default:
+                        throw new ArgumentException("The value is not valid for a SIPEventPackage.");
                 }
             }
         }
@@ -129,7 +134,7 @@ namespace SIPSorcery.SIP
         public const string SIP_DIALOG_INCLUDE_SDP = "includesdp=true";
     }
 
-    public struct SIPEventDialogStateEvent 
+    public struct SIPEventDialogStateEvent
     {
         public static SIPEventDialogStateEvent None = new SIPEventDialogStateEvent(null);
         public static SIPEventDialogStateEvent Cancelled = new SIPEventDialogStateEvent("cancelled");
@@ -176,14 +181,22 @@ namespace SIPSorcery.SIP
                 string trimmedValue = value.Trim().ToLower();
                 switch (trimmedValue)
                 {
-                    case "cancelled": return SIPEventDialogStateEvent.Cancelled;
-                    case "error": return SIPEventDialogStateEvent.Error;
-                    case "local-bye": return SIPEventDialogStateEvent.LocalBye;
-                    case "rejected": return SIPEventDialogStateEvent.Rejected;
-                    case "replaced": return SIPEventDialogStateEvent.Replaced;
-                    case "remote-bye": return SIPEventDialogStateEvent.RemoteBye;
-                    case "timeout": return SIPEventDialogStateEvent.Timeout;
-                    default: throw new ArgumentException("The value is not valid for a SIPEventDialogStateEvent.");
+                    case "cancelled":
+                        return SIPEventDialogStateEvent.Cancelled;
+                    case "error":
+                        return SIPEventDialogStateEvent.Error;
+                    case "local-bye":
+                        return SIPEventDialogStateEvent.LocalBye;
+                    case "rejected":
+                        return SIPEventDialogStateEvent.Rejected;
+                    case "replaced":
+                        return SIPEventDialogStateEvent.Replaced;
+                    case "remote-bye":
+                        return SIPEventDialogStateEvent.RemoteBye;
+                    case "timeout":
+                        return SIPEventDialogStateEvent.Timeout;
+                    default:
+                        throw new ArgumentException("The value is not valid for a SIPEventDialogStateEvent.");
                 }
             }
         }

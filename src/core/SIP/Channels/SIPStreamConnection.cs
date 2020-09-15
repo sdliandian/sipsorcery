@@ -5,12 +5,13 @@
 // TCP or TLS.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 31 Mar 2009	Aaron Clauson	Created (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com).
+// 31 Mar 2009	Aaron Clauson	Created, Hobart, Australia.
 // 25 Oct 2019  Aaron Clauson   Renamed from SIPConnection to SIPStreamConnection as part of major TCP and TLS
 //                              channel refactor. Moved message parsing logic to SIPMessage class.
+// 17 Nov 2019  Aaron Clauson   Added IPAddress.Any support.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
@@ -20,20 +21,22 @@ using System;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.SIP
 {
     /// <summary>
-    /// Represents a reliable stream connection (e.g. TCP or TLS) between two end points. Stream connections have a lot more
+    /// Represents a reliable stream connection (e.g. TCP or TLS) between two end points. Stream connections have a more
     /// overhead than UDP. The state of the connection has to be monitored and messages on the stream can be spread across
     /// multiple packets.
     /// </summary>
     public class SIPStreamConnection
     {
         public static int MaxSIPTCPMessageSize = SIPConstants.SIP_MAXIMUM_RECEIVE_LENGTH;
+        public static int CONNECTION_ID_LENGTH = 7; // Length of the random numeric string to use for connection ID's.
 
         /// <summary>
-        /// The underlying TCP socket for the stream connection. To take adavantage of newer async TCP IO operations the
+        /// The underlying TCP socket for the stream connection. To take advantage of newer async TCP IO operations the
         /// RecvSocketArgs is used for TCP channel receives. 
         /// </summary>
         public Socket StreamSocket;
@@ -66,15 +69,15 @@ namespace SIPSorcery.SIP
         public DateTime LastTransmission;
 
         /// <summary>
-        /// The current start position of unprocessed data in the recceive buffer.
+        /// The current start position of unprocessed data in the receive buffer.
         /// </summary>
         public int RecvStartPosn { get; private set; }
 
         /// <summary>
-        /// The current end position of unprocessed data in the recceive buffer.
+        /// The current end position of unprocessed data in the receive buffer.
         /// </summary>
         public int RecvEndPosn { get; private set; }
-        
+
         /// <summary>
         /// A unique ID for this connection. It will be recorded on any received messages to allow responses to quickly
         /// identify the same connection.
@@ -84,10 +87,10 @@ namespace SIPSorcery.SIP
         /// <summary>
         /// Event for new SIP requests or responses becoming available.
         /// </summary>
-        public event SIPMessageReceivedDelegate SIPMessageReceived;
+        public event SIPMessageReceivedAsyncDelegate SIPMessageReceived;
 
         /// <summary>
-        /// Records the crucial stream connection properties and initialises teh required buffers.
+        /// Records the crucial stream connection properties and initialises the required buffers.
         /// </summary>
         /// <param name="streamSocket">The local socket the stream is using.</param>
         /// <param name="remoteEndPoint">The remote network end point of this connection.</param>
@@ -98,7 +101,7 @@ namespace SIPSorcery.SIP
             LastTransmission = DateTime.Now;
             RemoteEndPoint = remoteEndPoint;
             ConnectionProtocol = connectionProtocol;
-            ConnectionID = Guid.NewGuid().ToString();
+            ConnectionID = Crypto.GetRandomInt(CONNECTION_ID_LENGTH).ToString();
 
             if (ConnectionProtocol == SIPProtocolsEnum.tcp)
             {
@@ -119,7 +122,7 @@ namespace SIPSorcery.SIP
             RecvEndPosn += bytesRead;
 
             int bytesSkipped = 0;
-            byte[] sipMsgBuffer = SIPMessage.ParseSIPMessageFromStream(buffer, RecvStartPosn, RecvEndPosn, out bytesSkipped);
+            byte[] sipMsgBuffer = SIPMessageBuffer.ParseSIPMessageFromStream(buffer, RecvStartPosn, RecvEndPosn, out bytesSkipped);
 
             while (sipMsgBuffer != null)
             {
@@ -127,7 +130,9 @@ namespace SIPSorcery.SIP
                 if (SIPMessageReceived != null)
                 {
                     LastTransmission = DateTime.Now;
-                    SIPMessageReceived(recvChannel, new SIPEndPoint(ConnectionProtocol, RemoteEndPoint, ConnectionID), sipMsgBuffer);
+                    SIPEndPoint localEndPoint = new SIPEndPoint(ConnectionProtocol, StreamSocket.LocalEndPoint as IPEndPoint, recvChannel.ID, ConnectionID);
+                    SIPEndPoint remoteEndPoint = new SIPEndPoint(ConnectionProtocol, RemoteEndPoint, recvChannel.ID, ConnectionID);
+                    SIPMessageReceived(recvChannel, localEndPoint, remoteEndPoint, sipMsgBuffer);
                 }
 
                 RecvStartPosn += (sipMsgBuffer.Length + bytesSkipped);
@@ -141,7 +146,7 @@ namespace SIPSorcery.SIP
                 else
                 {
                     // Try and extract another SIP message from the receive buffer.
-                    sipMsgBuffer = SIPMessage.ParseSIPMessageFromStream(buffer, RecvStartPosn, RecvEndPosn, out bytesSkipped);
+                    sipMsgBuffer = SIPMessageBuffer.ParseSIPMessageFromStream(buffer, RecvStartPosn, RecvEndPosn, out bytesSkipped);
                 }
             }
         }

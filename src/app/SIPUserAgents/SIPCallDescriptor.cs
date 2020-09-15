@@ -20,8 +20,8 @@ using System.Collections.Generic;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.SIP.App
 {
@@ -74,7 +74,7 @@ namespace SIPSorcery.SIP.App
 
         // Switchboard dial string options.
         public const string SWITCHBOARD_LINE_NAME_KEY = "swln";             // Dial string option to set the Switchboard-LineName header on the call leg.
-        //public const string SWITCHBOARD_DIALOGUE_DESCRIPTION_KEY = "swdd";// Dial string option to set a value for the switchboard description field on the answered dialogue. It does not set a header.
+                                                                            //public const string SWITCHBOARD_DIALOGUE_DESCRIPTION_KEY = "swdd";// Dial string option to set a value for the switchboard description field on the answered dialogue. It does not set a header.
         public const string SWITCHBOARD_CALLID_KEY = "swcid";               // Dial string option to set the Switchboard-CallID header on the call leg.
         public const string SWITCHBOARD_OWNER_KEY = "swo";                  // Dial string option to set the Switchboard-Owner header on the call leg.
 
@@ -95,7 +95,7 @@ namespace SIPSorcery.SIP.App
         public SIPCallDirection CallDirection;  // Indicates whether the call is incoming out outgoing relative to this server. An outgoing call is one that is placed by a user the server authenticates.
         public string ContentType;
         public string Content;
-        public int DelaySeconds;                        // An amount in seconds to delay the intiation of this call when used as part of a dial string.
+        public int DelaySeconds;                        // An amount in seconds to delay the initiation of this call when used as part of a dial string.
         public SIPCallRedirectModesEnum RedirectMode;   // Determines how the call will handle 3xx redirect responses.
         public int CallDurationLimit;                   // If non-zero sets a limit on the duration of any call created with this descriptor.
         public bool MangleResponseSDP = true;           // If false indicates the response SDP should be left alone if it contains a private IP address.
@@ -107,6 +107,28 @@ namespace SIPSorcery.SIP.App
         public bool RequestCallerDetails;       // If true indicates the client agent would like to pass on any caller details if/when available.
         public Guid DialPlanContextID;
         public int ReinviteDelay = -1;          // If >= 0 a SIP re-INVITE request will be sent to the remote caller after this many seconds. This is an attempt to work around a bug with one way audio and early media on a particular SIP server.
+
+        //rj2
+        /// <summary>
+        /// A string representing the Call Identifier
+        /// defaults to <see cref="CallProperties.CreateNewCallId()"/> if not set
+        /// 
+        /// CallId MUST be unique between different calls
+        /// </summary>
+        public string CallId;
+        /// <summary>
+        /// A string representing the Branch part of the SIP-VIA header to identify Call-Requests and Call-Responses
+        /// defaults to <see cref="CallProperties.CreateBranchId()"/> if not set
+        /// 
+        /// BranchId MUST be unique between different calls and even requests
+        /// BranchId MUST start with "z9hG4bK"
+        /// </summary>
+        /// <remarks>
+        /// to avoid unexpected behaviour:
+        /// BranchId should only be customized in fully controlled enclosed environments
+        /// or for testing purposes 
+        /// </remarks>
+        public string BranchId;
 
         // Real-time call control variables.
         public string AccountCode;          // If set indicates this is a billable call and this is the account code to bill the call against.
@@ -204,7 +226,7 @@ namespace SIPSorcery.SIP.App
             //}
             //else
             //{
-                fromHeader = SIPFromHeader.ParseFromHeader(From);
+            fromHeader = SIPFromHeader.ParseFromHeader(From);
             //}
 
             if (!FromDisplayName.IsNullOrBlank())
@@ -350,7 +372,7 @@ namespace SIPSorcery.SIP.App
                 }
 
                 // Parse the request caller details option.
-                Match callerDetailsMatch = Regex.Match(options,REQUEST_CALLER_DETAILS + @"=(?<callerdetails>\w+)");
+                Match callerDetailsMatch = Regex.Match(options, REQUEST_CALLER_DETAILS + @"=(?<callerdetails>\w+)");
                 if (callerDetailsMatch.Success)
                 {
                     Boolean.TryParse(callerDetailsMatch.Result("${callerdetails}"), out RequestCallerDetails);
@@ -376,7 +398,7 @@ namespace SIPSorcery.SIP.App
                 {
                     Int32.TryParse(delayedReinviteMatch.Result("${delayedReinvite}"), out ReinviteDelay);
 
-                    if(ReinviteDelay > MAX_REINVITE_DELAY)
+                    if (ReinviteDelay > MAX_REINVITE_DELAY)
                     {
                         ReinviteDelay = DEFAULT_REINVITE_DELAY;
                     }

@@ -4,10 +4,10 @@
 // Description: Implements a STUN Server as defined in RFC3489.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 27 Dec 2006	Aaron Clauson	Created (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com).
+// 27 Dec 2006	Aaron Clauson	Created, Dublin, Ireland.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
@@ -16,18 +16,18 @@
 using System;
 using System.Net;
 using System.Net.Sockets;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.Net
 {
-    public delegate void STUNSendMessageDelegate(IPEndPoint dst, byte[] buffer);  // Used so the STUN server can operate in a muli-plexed fashion with things like a SIP server.
+    public delegate void STUNSendMessageDelegate(IPEndPoint dst, byte[] buffer);  // Used so the STUN server can operate in a multiplexed fashion with things like a SIP server.
 
     public delegate void STUNServerRequestInTraceDelegate(IPEndPoint localEndPoint, IPEndPoint fromEndPoint, STUNMessage stunMessage);
     public delegate void STUNServerResponseOutTraceDelegate(IPEndPoint localEndPoint, IPEndPoint toEndPoint, STUNMessage stunMessage);
 
     public class STUNServer
-	{
+    {
         private static ILogger logger = Log.Logger;
 
         private IPEndPoint m_primaryEndPoint;
@@ -52,8 +52,16 @@ namespace SIPSorcery.Net
             m_secondaryEndPoint = secondaryEndPoint;
             m_secondarySend = secondarySend;
 
-            m_primaryDiffPortSocket = NetServices.CreateRandomUDPListener(m_primaryEndPoint.Address, out m_primaryDiffPortEndPoint);
-            m_secondaryDiffPortSocket = NetServices.CreateRandomUDPListener(m_secondaryEndPoint.Address, out m_secondaryDiffPortEndPoint);
+            //m_primaryDiffPortSocket = NetServices.CreateRandomUDPListener(m_primaryEndPoint.Address, out m_primaryDiffPortEndPoint);
+            //m_secondaryDiffPortSocket = NetServices.CreateRandomUDPListener(m_secondaryEndPoint.Address, out m_secondaryDiffPortEndPoint);
+
+            m_primaryDiffPortSocket = new UdpClient();
+            m_primaryDiffPortSocket.Client = NetServices.CreateBoundUdpSocket(0, m_primaryEndPoint.Address);
+            m_primaryDiffPortEndPoint = m_primaryDiffPortSocket.Client.LocalEndPoint as IPEndPoint;
+
+            m_secondaryDiffPortSocket = new UdpClient();
+            m_secondaryDiffPortSocket.Client = NetServices.CreateBoundUdpSocket(0, m_primaryEndPoint.Address);
+            m_secondaryDiffPortEndPoint = m_secondaryDiffPortSocket.Client.LocalEndPoint as IPEndPoint;
 
             logger.LogDebug("STUN Server additional sockets, primary=" + IPSocket.GetSocketString(m_primaryDiffPortEndPoint) + ", secondary=" + IPSocket.GetSocketString(m_secondaryDiffPortEndPoint) + ".");
         }
@@ -71,7 +79,7 @@ namespace SIPSorcery.Net
                 FireSTUNPrimaryRequestInTraceEvent(localEndPoint, receivedEndPoint, stunRequest);
 
                 STUNMessage stunResponse = GetResponse(receivedEndPoint, stunRequest, true);
-                byte[] stunResponseBuffer = stunResponse.ToByteBuffer();
+                byte[] stunResponseBuffer = stunResponse.ToByteBuffer(null, false);
 
                 bool changeAddress = false;
                 bool changePort = false;
@@ -140,7 +148,7 @@ namespace SIPSorcery.Net
                 FireSTUNSecondaryRequestInTraceEvent(localEndPoint, receivedEndPoint, stunRequest);
 
                 STUNMessage stunResponse = GetResponse(receivedEndPoint, stunRequest, true);
-                byte[] stunResponseBuffer = stunResponse.ToByteBuffer();
+                byte[] stunResponseBuffer = stunResponse.ToByteBuffer(null, false);
 
                 bool changeAddress = false;
                 bool changePort = false;
@@ -201,7 +209,7 @@ namespace SIPSorcery.Net
             if (stunRequest.Header.MessageType == STUNMessageTypesEnum.BindingRequest)
             {
                 STUNMessage stunResponse = new STUNMessage();
-                stunResponse.Header.MessageType = STUNMessageTypesEnum.BindingResponse;
+                stunResponse.Header.MessageType = STUNMessageTypesEnum.BindingSuccessResponse;
                 stunResponse.Header.TransactionId = stunRequest.Header.TransactionId;
 
                 // Add MappedAddress attribute to indicate the socket the request was received from.
@@ -220,7 +228,7 @@ namespace SIPSorcery.Net
                     stunResponse.Attributes.Add(sourceAddressAtt);
                 }
 
-                // Add ChangedAddress attribute to inidcate the servers alternative socket.
+                // Add ChangedAddress attribute to indicate the servers alternative socket.
                 if (primary)
                 {
                     STUNAddressAttribute changedAddressAtt = new STUNAddressAttribute(STUNAttributeTypesEnum.ChangedAddress, m_secondaryEndPoint.Port, m_secondaryEndPoint.Address);
@@ -314,5 +322,5 @@ namespace SIPSorcery.Net
                 logger.LogError("Exception FireSTUNSecondaryResponseOutTraceEvent. " + excp.Message);
             }
         }
-	}
+    }
 }

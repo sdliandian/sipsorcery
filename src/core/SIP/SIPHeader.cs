@@ -4,10 +4,10 @@
 // Description: SIP Header.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 17 Sep 2005	Aaron Clauson	Created (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com).
+// 17 Sep 2005	Aaron Clauson	Created, Dublin, Ireland.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
@@ -19,30 +19,12 @@ using System.Net;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Text.RegularExpressions;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.SIP
 {
-    /// <bnf>
-    /// Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
-    /// via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
-    /// via-params        =  via-ttl / via-maddr / via-received / via-branch / via-extension
-    /// via-ttl           =  "ttl" EQUAL ttl
-    /// via-maddr         =  "maddr" EQUAL host
-    /// via-received      =  "received" EQUAL (IPv4address / IPv6address)
-    /// via-branch        =  "branch" EQUAL token
-    /// via-extension     =  generic-param
-    /// sent-protocol     =  protocol-name SLASH protocol-version SLASH transport
-    /// protocol-name     =  "SIP" / token
-    /// protocol-version  =  token
-    /// transport         =  "UDP" / "TCP" / "TLS" / "SCTP" / other-transport
-    /// sent-by           =  host [ COLON port ]
-    /// ttl               =  1*3DIGIT ; 0 to 255
-    /// generic-param     =  token [ EQUAL gen-value ]
-    /// gen-value         =  token / host / quoted-string
-    /// </bnf>
-    /// <remarks>
+    /// <summary>
     /// The Via header only has parameters, no headers. Parameters of from ...;name=value;name2=value2
     /// Specific parameters: ttl, maddr, received, branch.
     /// 
@@ -57,7 +39,7 @@ namespace SIPSorcery.SIP
     /// Only the top Via header branch is used for transactions though so if the request has made it to this stack
     /// with missing branches then in theory it should be safe to proceed. It will be left up to the SIPTransaction
     /// class to reject any SIP requests that are missing the necessary branch.
-    /// </remarks>
+    /// </summary>
     public class SIPViaHeader
     {
         private static char m_paramDelimChar = ';';
@@ -66,6 +48,15 @@ namespace SIPSorcery.SIP
         private static string m_receivedKey = SIPHeaderAncillary.SIP_HEADERANC_RECEIVED;
         private static string m_rportKey = SIPHeaderAncillary.SIP_HEADERANC_RPORT;
         private static string m_branchKey = SIPHeaderAncillary.SIP_HEADERANC_BRANCH;
+
+        /// <summary>
+        /// Special SIP Via header that is recognised by the SIP transport classes Send methods. At send time this header will be replaced by 
+        /// one with IP end point details that reflect the socket the request or response was sent from.
+        /// </summary>
+        public static SIPViaHeader GetDefaultSIPViaHeader()
+        {
+            return new SIPViaHeader(new IPEndPoint(IPAddress.Any, 0), CallProperties.CreateBranchId(), SIPProtocolsEnum.udp);
+        }
 
         public string Version;
         public SIPProtocolsEnum Transport;
@@ -86,7 +77,7 @@ namespace SIPSorcery.SIP
             }
             set { ViaParameters.Set(m_branchKey, value); }
         }
-        public string ReceivedFromIPAddress		// IP Address contained in the recevied parameter.
+        public string ReceivedFromIPAddress     // IP Address contained in the received parameter.
         {
             get
             {
@@ -101,7 +92,7 @@ namespace SIPSorcery.SIP
             }
             set { ViaParameters.Set(m_receivedKey, value); }
         }
-        public int ReceivedFromPort		        // Port contained in the rport parameter.
+        public int ReceivedFromPort             // Port contained in the rport parameter.
         {
             get
             {
@@ -123,7 +114,7 @@ namespace SIPSorcery.SIP
         {
             get
             {
-                if(IPSocket.TryParseIPEndPoint(Host, out var ipEndPoint))
+                if (IPSocket.TryParseIPEndPoint(Host, out var ipEndPoint))
                 {
                     if (ipEndPoint.Port == 0)
                     {
@@ -134,7 +125,14 @@ namespace SIPSorcery.SIP
                         }
                         else
                         {
-                            return ipEndPoint.Address.ToString();
+                            if (ipEndPoint.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                            {
+                                return "[" + ipEndPoint.Address.ToString() + "]";
+                            }
+                            else
+                            {
+                                return ipEndPoint.Address.ToString();
+                            }
                         }
                     }
                     else
@@ -173,11 +171,27 @@ namespace SIPSorcery.SIP
                 }
                 else if (ReceivedFromPort != 0)
                 {
-                    return Host + ":" + ReceivedFromPort;
+                    if (IPAddress.TryParse(Host, out IPAddress hostip))
+                    {
+                        IPEndPoint ep = new IPEndPoint(hostip, ReceivedFromPort);
+                        return ep.ToString();
+                    }
+                    else
+                    {
+                        return Host + ":" + ReceivedFromPort;
+                    }
                 }
                 else if (Port != 0)
                 {
-                    return Host + ":" + Port;
+                    if (IPAddress.TryParse(Host, out IPAddress hostip))
+                    {
+                        IPEndPoint ep = new IPEndPoint(hostip, Port);
+                        return ep.ToString();
+                    }
+                    else
+                    {
+                        return Host + ":" + Port;
+                    }
                 }
                 else
                 {
@@ -212,7 +226,7 @@ namespace SIPSorcery.SIP
         { }
 
         public SIPViaHeader(string contactEndPoint, string branch) :
-            this (IPSocket.ParseSocketString(contactEndPoint), branch, SIPProtocolsEnum.udp)
+            this(IPSocket.ParseSocketString(contactEndPoint), branch, SIPProtocolsEnum.udp)
         { }
 
         public SIPViaHeader(IPEndPoint contactEndPoint, string branch, SIPProtocolsEnum protocol) :
@@ -294,7 +308,7 @@ namespace SIPSorcery.SIP
                             if (IPSocket.TryParseIPEndPoint(contactAddress, out var ipEndPoint))
                             {
                                 viaHeader.Host = ipEndPoint.Address.ToString();
-                                if(ipEndPoint.Port != 0)
+                                if (ipEndPoint.Port != 0)
                                 {
                                     viaHeader.Port = ipEndPoint.Port;
                                 }
@@ -311,7 +325,7 @@ namespace SIPSorcery.SIP
                                     {
                                         throw new SIPValidationException(SIPValidationFieldsEnum.ViaHeader, "Non-numeric port for IP address.");
                                     }
-                                    else if (viaHeader.Port > SIPConstants.MAX_SIP_PORT)
+                                    else if (viaHeader.Port > IPEndPoint.MaxPort)
                                     {
                                         throw new SIPValidationException(SIPValidationFieldsEnum.ViaHeader, "The port specified in a Via header exceeded the maximum allowed.");
                                     }
@@ -334,7 +348,7 @@ namespace SIPSorcery.SIP
             }
             else
             {
-                throw new SIPValidationException(SIPValidationFieldsEnum.ViaHeader, "Via list was empty."); ;
+                throw new SIPValidationException(SIPValidationFieldsEnum.ViaHeader, "Via list was empty.");
             }
         }
 
@@ -366,6 +380,15 @@ namespace SIPSorcery.SIP
         //public const string DEFAULT_FROM_NAME = SIPConstants.SIP_DEFAULT_USERNAME;
         public const string DEFAULT_FROM_URI = SIPConstants.SIP_DEFAULT_FROMURI;
         public const string PARAMETER_TAG = SIPHeaderAncillary.SIP_HEADERANC_TAG;
+
+        /// <summary>
+        /// Special SIP From header that is recognised by the SIP transport classes Send methods. At send time this header will be replaced by 
+        /// one with IP end point details that reflect the socket the request or response was sent from.
+        /// </summary>
+        public static SIPFromHeader GetDefaultSIPFromHeader(SIPSchemesEnum scheme)
+        {
+            return new SIPFromHeader(null, new SIPURI(scheme, IPAddress.Any, 0), CallProperties.CreateNewTag());
+        }
 
         public string FromName
         {
@@ -443,6 +466,18 @@ namespace SIPSorcery.SIP
         public override string ToString()
         {
             return m_userField.ToString();
+        }
+
+        /// <summary>
+        /// Returns a friendly description of the caller that's suitable for humans. Leaves out
+        /// all the parameters etc.
+        /// </summary>
+        /// <returns>A string representing a friendly description of the From header.</returns>
+        public string FriendlyDescription()
+        {
+            string caller = FromURI.ToAOR();
+            caller = (!string.IsNullOrEmpty(FromName)) ? FromName + " " + caller : caller;
+            return caller;
         }
     }
 
@@ -569,6 +604,15 @@ namespace SIPSorcery.SIP
 
         //private static char[] m_nonStandardURIDelimChars = new char[] { '\n', '\r', ' ' };	// Characters that can delimit a SIP URI, supposed to be > but it is sometimes missing.
 
+        /// <summary>
+        /// Special SIP contact header that is recognised by the SIP transport classes Send methods. At send time this header will be replaced by 
+        /// one with IP end point details that reflect the socket the request or response was sent from.
+        /// </summary>
+        public static SIPContactHeader GetDefaultSIPContactHeader()
+        {
+            return new SIPContactHeader(null, new SIPURI(SIPSchemesEnum.sip, IPAddress.Any, 0));
+        }
+
         public string RawHeader;
 
         public string ContactName
@@ -599,7 +643,7 @@ namespace SIPSorcery.SIP
                 if (ContactParameters.Has(EXPIRES_PARAMETER_KEY))
                 {
                     string expiresStr = ContactParameters.Get(EXPIRES_PARAMETER_KEY);
-                    Int32.TryParse(expiresStr, out  expires);
+                    Int32.TryParse(expiresStr, out expires);
                 }
 
                 return expires;
@@ -702,7 +746,7 @@ namespace SIPSorcery.SIP
             }
             else
             {
-                // Compare invaraiant parameters.
+                // Compare invariant parameters.
                 string[] contact1Keys = contact1.ContactParameters.GetKeys();
 
                 if (contact1Keys != null && contact1Keys.Length > 0)
@@ -1298,9 +1342,10 @@ namespace SIPSorcery.SIP
         public string Reason;
         public SIPRouteSet RecordRoutes = new SIPRouteSet();
         public string ReferredBy;                           // RFC 3515 "The Session Initiation Protocol (SIP) Refer Method"
-        public string ReferSub;                             // RFC 4488 If set to false indicates the implict REFER subscription should not be created.
+        public string ReferSub;                             // RFC 4488 If set to false indicates the implicit REFER subscription should not be created.
         public string ReferTo;                              // RFC 3515 "The Session Initiation Protocol (SIP) Refer Method"
         public string ReplyTo;
+        public string Replaces;
         public string Require;
         public string RetryAfter;
         public int RSeq = -1;                               // RFC3262 reliable provisional response sequence number.
@@ -1326,10 +1371,10 @@ namespace SIPSorcery.SIP
         public string CRMCompanyName;               // The matching company name from the CRM system for the caller.
         public string CRMPictureURL;                 // If available a URL for a picture for the person or company from the CRM system for the caller.
 
-        public List<string> UnknownHeaders = new List<string>();	// Holds any unrecognised headers.
+        public List<string> UnknownHeaders = new List<string>();    // Holds any unrecognised headers.
 
         public List<SIPExtensions> RequiredExtensions = new List<SIPExtensions>();
-        public bool HasUnknownRequireExtension = false;
+        public string UnknownRequireExtension = null;
         public List<SIPExtensions> SupportedExtensions = new List<SIPExtensions>();
 
         public SIPHeader()
@@ -1419,7 +1464,7 @@ namespace SIPSorcery.SIP
             try
             {
                 SIPHeader sipHeader = new SIPHeader();
-                sipHeader.MaxForwards = -1;		// This allows detection of whether this header is present or not.
+                sipHeader.MaxForwards = -1;     // This allows detection of whether this header is present or not.
                 string lastHeader = null;
 
                 for (int lineIndex = 0; lineIndex < headersCollection.Length; lineIndex++)
@@ -1435,7 +1480,7 @@ namespace SIPSorcery.SIP
                     string headerName = null;
                     string headerValue = null;
 
-                    // If the first character of a line is whitespace it's a contiuation of the previous line.
+                    // If the first character of a line is whitespace it's a continuation of the previous line.
                     if (headerLine.StartsWith(" "))
                     {
                         headerName = lastHeader;
@@ -1537,7 +1582,7 @@ namespace SIPSorcery.SIP
                             headerNameLower == SIPHeaders.SIP_HEADER_CONTACT.ToLower())
                         {
                             List<SIPContactHeader> contacts = SIPContactHeader.ParseContactHeader(headerValue);
-                            if(contacts != null && contacts.Count > 0)
+                            if (contacts != null && contacts.Count > 0)
                             {
                                 sipHeader.Contact.AddRange(contacts);
                             }
@@ -1713,14 +1758,20 @@ namespace SIPSorcery.SIP
                             sipHeader.ReferredBy = headerValue;
                         }
                         #endregion
+                        #region Replaces.
+                        else if (headerNameLower == SIPHeaders.SIP_HEADER_REPLACES.ToLower())
+                        {
+                            sipHeader.Replaces = headerValue;
+                        }
+                        #endregion
                         #region Require.
                         else if (headerNameLower == SIPHeaders.SIP_HEADER_REQUIRE.ToLower())
                         {
                             sipHeader.Require = headerValue;
 
-                            if(!String.IsNullOrEmpty(sipHeader.Require))
+                            if (!String.IsNullOrEmpty(sipHeader.Require))
                             {
-                                sipHeader.RequiredExtensions = SIPExtensionHeaders.ParseSIPExtensions(sipHeader.Require, out sipHeader.HasUnknownRequireExtension);
+                                sipHeader.RequiredExtensions = SIPExtensionHeaders.ParseSIPExtensions(sipHeader.Require, out sipHeader.UnknownRequireExtension);
                             }
                         }
                         #endregion
@@ -2084,6 +2135,7 @@ namespace SIPSorcery.SIP
                 headersBuilder.Append((ReferSub != null) ? SIPHeaders.SIP_HEADER_REFERSUB + ": " + ReferSub + m_CRLF : null);
                 headersBuilder.Append((ReferTo != null) ? SIPHeaders.SIP_HEADER_REFERTO + ": " + ReferTo + m_CRLF : null);
                 headersBuilder.Append((ReferredBy != null) ? SIPHeaders.SIP_HEADER_REFERREDBY + ": " + ReferredBy + m_CRLF : null);
+                headersBuilder.Append((Replaces != null) ? SIPHeaders.SIP_HEADER_REPLACES + ": " + Replaces + m_CRLF : null);
                 headersBuilder.Append((Reason != null) ? SIPHeaders.SIP_HEADER_REASON + ": " + Reason + m_CRLF : null);
                 headersBuilder.Append((RSeq != -1) ? SIPHeaders.SIP_HEADER_RELIABLE_SEQ + ": " + RSeq + m_CRLF : null);
                 headersBuilder.Append((RAckRSeq != -1) ? SIPHeaders.SIP_HEADER_RELIABLE_ACK + ": " + RAckRSeq + " " + RAckCSeq + " " + RAckCSeqMethod + m_CRLF : null);

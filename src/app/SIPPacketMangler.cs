@@ -6,10 +6,10 @@
 // of SIP messages.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 14 Sep 2008	    Aaron Clauson   Created  (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com)
+// 14 Sep 2008	    Aaron Clauson   Created, Hobart, Australia 
 //                                  (most methods extracted from StatefulProxyCore).
 //
 // License:
@@ -18,10 +18,11 @@
 
 using System;
 using System.Net;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using SIPSorcery.Net;
 using SIPSorcery.Sys;
-using Microsoft.Extensions.Logging;
 
 namespace SIPSorcery.SIP.App
 {
@@ -37,10 +38,24 @@ namespace SIPSorcery.SIP.App
             {
                 if (sdpBody != null && publicIPAddress != null)
                 {
-                    string sdpAddress = SDP.GetSDPRTPEndPoint(sdpBody).Address.ToString();
+                    IPAddress addr = SDP.GetSDPRTPEndPoint(sdpBody).Address;
+                    //rj2: need to consider publicAddress and IPv6 for mangling
+                    IPAddress pubaddr = IPAddress.Parse(publicIPAddress);
+                    string sdpAddress = addr.ToString();
 
                     // Only mangle if there is something to change. For example the server could be on the same private subnet in which case it can't help.
-                    if (IPSocket.IsPrivateAddress(sdpAddress) && publicIPAddress != sdpAddress)
+                    if (IPSocket.IsPrivateAddress(sdpAddress) && publicIPAddress != sdpAddress
+                        && pubaddr.AddressFamily == AddressFamily.InterNetworkV6
+                        && addr.AddressFamily == AddressFamily.InterNetworkV6)
+                    {
+                        string mangledSDP = Regex.Replace(sdpBody, @"c=IN IP6 (?<ipaddress>([:a-fA-F0-9]+))", "c=IN IP6" + publicIPAddress, RegexOptions.Singleline);
+                        wasMangled = true;
+
+                        return mangledSDP;
+                    }
+                    else if (IPSocket.IsPrivateAddress(sdpAddress) && publicIPAddress != sdpAddress
+                        && pubaddr.AddressFamily == AddressFamily.InterNetwork
+                        && addr.AddressFamily == AddressFamily.InterNetwork)
                     {
                         //logger.LogDebug("MangleSDP replacing private " + sdpAddress + " with " + publicIPAddress + ".");
                         string mangledSDP = Regex.Replace(sdpBody, @"c=IN IP4 (?<ipaddress>(\d+\.){3}\d+)", "c=IN IP4 " + publicIPAddress, RegexOptions.Singleline);
@@ -66,9 +81,9 @@ namespace SIPSorcery.SIP.App
         /// <summary>
         /// Mangles private IP addresses in a SIP request replacing them with the IP address the packet was received on. 
         /// </summary>
-        /// <param name="sipResponse">The unmangled SIP request.</param>
+        /// <param name="sipRequest">The unmangled SIP request.</param>
         /// <returns>The mangled SIP request</returns>
-        public static void MangleSIPRequest(SIPMonitorServerTypesEnum server, SIPRequest sipRequest, string username, SIPMonitorLogDelegate logDelegate)
+        public static void MangleSIPRequest(SIPRequest sipRequest)
         {
             try
             {
@@ -100,10 +115,7 @@ namespace SIPSorcery.SIP.App
                         sipRequest.Body = mangledSDP;
                         sipRequest.Header.ContentLength = sipRequest.Body.Length;
 
-                        if (logDelegate != null)
-                        {
-                            logDelegate(new SIPMonitorConsoleEvent(server, SIPMonitorEventTypesEnum.DialPlan, "SDP mangled for INVITE request from " + sipRequest.RemoteSIPEndPoint.ToString() + ", adjusted address " + bottomViaIPAddress + ".", username));
-                        }
+                        logger.LogDebug("SDP mangled for " + sipRequest.Method.ToString() + " request from " + sipRequest.RemoteSIPEndPoint.ToString() + ", adjusted address " + bottomViaIPAddress + ".");
                     }
                 }
             }
@@ -118,7 +130,7 @@ namespace SIPSorcery.SIP.App
         /// </summary>
         /// <param name="sipResponse">The unmangled SIP response.</param>
         /// <returns>The mangled SIP response</returns>
-        public static void MangleSIPResponse(SIPMonitorServerTypesEnum server, SIPResponse sipResponse, SIPEndPoint remoteEndPoint, string username, SIPMonitorLogDelegate logDelegate)
+        public static void MangleSIPResponse(SIPResponse sipResponse, SIPEndPoint remoteEndPoint)
         {
             try
             {
@@ -133,7 +145,7 @@ namespace SIPSorcery.SIP.App
                         SIPURI origContact = sipResponse.Header.Contact[0].ContactURI;
                         sipResponse.Header.Contact[0].ContactURI = new SIPURI(origContact.Scheme, remoteEndPoint);
 
-                        //logger.LogDebug("INVITE response Contact URI identified as containing private address, original " + origContact + " adjustied to " + remoteEndPoint.ToString() + ".");
+                        //logger.LogDebug("INVITE response Contact URI identified as containing private address, original " + origContact + " adjusted to " + remoteEndPoint.ToString() + ".");
                         //FireProxyLogEvent(new SIPMonitorConsoleEvent(SIPMonitorServerTypesEnum.Registrar, SIPMonitorServerTypesEnum.ContactRegisterInProgress, "INVITE Response contact adjusted from " + origContact + " to " + remoteEndPoint.ToString() + ".", username));
                     }
                 }
@@ -148,10 +160,7 @@ namespace SIPSorcery.SIP.App
                         sipResponse.Body = mangledSDP;
                         sipResponse.Header.ContentLength = sipResponse.Body.Length;
 
-                        if (logDelegate != null)
-                        {
-                            logDelegate(new SIPMonitorConsoleEvent(server, SIPMonitorEventTypesEnum.DialPlan, "SDP mangled for INVITE response from " + sipResponse.RemoteSIPEndPoint.ToString() + ", adjusted address " + remoteEndPoint.Address.ToString() + ".", username));
-                        }
+                        logger.LogDebug("SDP mangled for " + sipResponse.Status.ToString() + " response from " + sipResponse.RemoteSIPEndPoint.ToString() + ", adjusted address " + remoteEndPoint.Address.ToString() + ".");
                     }
                 }
             }

@@ -5,10 +5,10 @@
 // an INVITE transaction.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //  
 // History:
-// 21 Nov 2006	Aaron Clauson	Created (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com).
+// 21 Nov 2006	Aaron Clauson	Created, Dublin, Ireland.
 // 30 Oct 2019  Aaron Clauson   Added support for reliable provisional responses as per RFC3262.
 //
 // License: 
@@ -16,8 +16,8 @@
 //-----------------------------------------------------------------------------
 
 using System;
-using System.Net;
-using System.Linq;
+using System.Net.Sockets;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace SIPSorcery.SIP
@@ -27,34 +27,37 @@ namespace SIPSorcery.SIP
     /// </summary>
     public class UASInviteTransaction : SIPTransaction
     {
-        private static string m_sipServerAgent = SIPConstants.SIP_SERVER_STRING;
-
-        // If set this host name (or IP address) that should be used in the Contact header of the Ok response so that ACK
-        // requests can be delivered correctly.
-        private string m_contactHost;
+        private static string m_sipServerAgent = SIPConstants.SIP_USERAGENT_STRING;
 
         /// <summary>
         /// The local tag is set on the To SIP header and forms part of the information used to identify a SIP dialog.
         /// </summary>
-        public string LocalTag { get; set; }
+        public string LocalTag
+        {
+            get { return m_localTag; }
+            set { m_localTag = value; }
+        }
 
         public event SIPTransactionCancelledDelegate UASInviteTransactionCancelled;
         public event SIPTransactionRequestReceivedDelegate NewCallReceived;
         public event SIPTransactionTimedOutDelegate UASInviteTransactionTimedOut;
 
-        internal UASInviteTransaction(
+        /// <summary>
+        /// An application will be interested in getting a notification about the ACK request if it
+        /// is being used to carry the SDP answer. This occurs if the original INVITE did not contain an
+        /// SDP offer.
+        /// </summary>
+        public event SIPTransactionRequestReceivedDelegate OnAckReceived;
+
+        public UASInviteTransaction(
             SIPTransport sipTransport,
             SIPRequest sipRequest,
-            SIPEndPoint dstEndPoint,
-            SIPEndPoint localSIPEndPoint,
             SIPEndPoint outboundProxy,
-            string contactHost,
             bool noCDR = false)
-            : base(sipTransport, sipRequest, dstEndPoint, localSIPEndPoint, outboundProxy)
+            : base(sipTransport, sipRequest, outboundProxy)
         {
             TransactionType = SIPTransactionTypesEnum.InviteServer;
             m_remoteTag = sipRequest.Header.From.FromTag;
-            m_contactHost = contactHost;
 
             if (sipRequest.Header.To.ToTag == null)
             {
@@ -68,8 +71,8 @@ namespace SIPSorcery.SIP
             }
 
             //logger.LogDebug("New UASTransaction (" + TransactionId + ") for " + TransactionRequest.URI.ToString() + " to " + RemoteEndPoint + ".");
-            SIPEndPoint localEP = SIPEndPoint.TryParse(sipRequest.Header.ProxyReceivedOn) ?? localSIPEndPoint;
-            SIPEndPoint remoteEP = SIPEndPoint.TryParse(sipRequest.Header.ProxyReceivedFrom) ?? dstEndPoint;
+            SIPEndPoint localEP = SIPEndPoint.TryParse(sipRequest.Header.ProxyReceivedOn) ?? sipRequest.LocalSIPEndPoint;
+            SIPEndPoint remoteEP = SIPEndPoint.TryParse(sipRequest.Header.ProxyReceivedFrom) ?? sipRequest.RemoteSIPEndPoint;
 
             if (!noCDR)
             {
@@ -81,6 +84,14 @@ namespace SIPSorcery.SIP
             TransactionFinalResponseReceived += UASInviteTransaction_TransactionResponseReceived;
             TransactionTimedOut += UASInviteTransaction_TransactionTimedOut;
             TransactionRemoved += UASInviteTransaction_TransactionRemoved;
+            OnAckRequestReceived += UASInviteTransaction_OnAckRequestReceived;
+
+            sipTransport.AddTransaction(this);
+        }
+
+        private Task<SocketError> UASInviteTransaction_OnAckRequestReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPRequest sipRequest)
+        {
+            return OnAckReceived?.Invoke(localSIPEndPoint, remoteEndPoint, this, sipRequest);
         }
 
         private void UASInviteTransaction_TransactionRemoved(SIPTransaction transaction)
@@ -98,12 +109,13 @@ namespace SIPSorcery.SIP
             CDR?.TimedOut();
         }
 
-        private void UASInviteTransaction_TransactionResponseReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPResponse sipResponse)
+        private Task<SocketError> UASInviteTransaction_TransactionResponseReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPResponse sipResponse)
         {
             logger.LogWarning("UASInviteTransaction received unexpected response, " + sipResponse.ReasonPhrase + " from " + remoteEndPoint.ToString() + ", ignoring.");
+            return Task.FromResult(SocketError.Fault);
         }
 
-        private void UASInviteTransaction_TransactionRequestReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPRequest sipRequest)
+        private Task<SocketError> UASInviteTransaction_TransactionRequestReceived(SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPTransaction sipTransaction, SIPRequest sipRequest)
         {
             try
             {
@@ -131,23 +143,26 @@ namespace SIPSorcery.SIP
                     else
                     {
                         // Nobody wants to answer this call so return an error response.
-                        SIPResponse declinedResponse = SIPTransport.GetResponse(sipRequest, SIPResponseStatusCodesEnum.Decline, "Nothing listening");
+                        SIPResponse declinedResponse = SIPResponse.GetResponse(sipRequest, SIPResponseStatusCodesEnum.Decline, "Nothing listening");
                         SendFinalResponse(declinedResponse);
                     }
                 }
+
+                return Task.FromResult(SocketError.Success);
             }
             catch (Exception excp)
             {
                 logger.LogError("Exception UASInviteTransaction GotRequest. " + excp.Message);
+                return Task.FromResult(SocketError.Fault);
             }
         }
 
-        public override void SendProvisionalResponse(SIPResponse sipResponse)
+        public new Task<SocketError> SendProvisionalResponse(SIPResponse sipResponse)
         {
             try
             {
-                base.SendProvisionalResponse(sipResponse);
                 CDR?.Progress(sipResponse.Status, sipResponse.ReasonPhrase, null, null);
+                return base.SendProvisionalResponse(sipResponse);
             }
             catch (Exception excp)
             {
@@ -156,12 +171,12 @@ namespace SIPSorcery.SIP
             }
         }
 
-        public override void SendFinalResponse(SIPResponse sipResponse)
+        public new void SendFinalResponse(SIPResponse sipResponse)
         {
             try
             {
-                base.SendFinalResponse(sipResponse);
                 CDR?.Answered(sipResponse.StatusCode, sipResponse.Status, sipResponse.ReasonPhrase, null, null);
+                base.SendFinalResponse(sipResponse);
             }
             catch (Exception excp)
             {
@@ -170,18 +185,23 @@ namespace SIPSorcery.SIP
             }
         }
 
+        /// <summary>
+        /// Cancels this transaction stopping any further processing or transmission of a previously
+        /// generated final response.
+        /// </summary>
+        /// <returns>A socket error with the result of the cancel.</returns>
         public void CancelCall()
         {
             try
             {
                 if (TransactionState == SIPTransactionStatesEnum.Calling || TransactionState == SIPTransactionStatesEnum.Trying || TransactionState == SIPTransactionStatesEnum.Proceeding)
                 {
-                    base.Cancel();
-
-                    SIPResponse cancelResponse = SIPTransport.GetResponse(TransactionRequest, SIPResponseStatusCodesEnum.RequestTerminated, null);
-                    SendFinalResponse(cancelResponse);
-
+                    base.UpdateTransactionState(SIPTransactionStatesEnum.Cancelled);
                     UASInviteTransactionCancelled?.Invoke(this);
+
+                    SIPResponse cancelResponse = SIPResponse.GetResponse(TransactionRequest, SIPResponseStatusCodesEnum.RequestTerminated, null);
+                    cancelResponse.Header.To.ToTag = LocalTag;
+                    base.SendFinalResponse(cancelResponse);
                 }
                 else
                 {
@@ -195,45 +215,23 @@ namespace SIPSorcery.SIP
             }
         }
 
-        public SIPResponse GetOkResponse(SIPRequest sipRequest, SIPEndPoint localSIPEndPoint, string contentType, string messageBody)
+        public SIPResponse GetOkResponse(string contentType, string messageBody)
         {
             try
             {
-                SIPResponse okResponse = new SIPResponse(SIPResponseStatusCodesEnum.Ok, null, sipRequest.LocalSIPEndPoint);
+                SIPResponse okResponse = new SIPResponse(SIPResponseStatusCodesEnum.Ok, null);
+                okResponse.SetSendFromHints(TransactionRequest.LocalSIPEndPoint);
 
-                SIPHeader requestHeader = sipRequest.Header;
-                SIPURI contactUri = null;
-
-                if (String.IsNullOrEmpty(m_contactHost) == false)
-                {
-                    if (m_contactHost.Contains(":"))
-                    {
-                        contactUri = new SIPURI(null, m_contactHost, null, sipRequest.URI.Scheme);
-                    }
-                    else
-                    {
-                        contactUri = new SIPURI(null, m_contactHost + ":" + localSIPEndPoint.Port, null, sipRequest.URI.Scheme);
-                    }
-                }
-                else if (IPAddress.Equals(IPAddress.Any, localSIPEndPoint.Address) || IPAddress.Equals(IPAddress.IPv6Any, localSIPEndPoint.Address))
-                {
-                    // No point using a contact address of 0.0.0.0.
-                    contactUri = new SIPURI(null, Dns.GetHostName() + ":" + localSIPEndPoint.Port, null, sipRequest.URI.Scheme);
-                }
-                else
-                {
-                    contactUri = new SIPURI(sipRequest.URI.Scheme, localSIPEndPoint);
-                }
-
-                okResponse.Header = new SIPHeader(new SIPContactHeader(null, contactUri), requestHeader.From, requestHeader.To, requestHeader.CSeq, requestHeader.CallId);
-
+                SIPHeader requestHeader = TransactionRequest.Header;
+                okResponse.Header = new SIPHeader(SIPContactHeader.GetDefaultSIPContactHeader(), requestHeader.From, requestHeader.To, requestHeader.CSeq, requestHeader.CallId);
                 okResponse.Header.To.ToTag = m_localTag;
                 okResponse.Header.CSeqMethod = requestHeader.CSeqMethod;
                 okResponse.Header.Vias = requestHeader.Vias;
                 okResponse.Header.Server = m_sipServerAgent;
                 okResponse.Header.MaxForwards = Int32.MinValue;
                 okResponse.Header.RecordRoutes = requestHeader.RecordRoutes;
-                okResponse.Header.Supported = (PrackSupported == true) ? SIPExtensionHeaders.PRACK : null;
+                okResponse.Header.Supported = SIPExtensionHeaders.REPLACES + ", " + SIPExtensionHeaders.NO_REFER_SUB
+                    + ((PrackSupported == true) ? ", " + SIPExtensionHeaders.PRACK : "");
 
                 okResponse.Body = messageBody;
                 okResponse.Header.ContentType = contentType;

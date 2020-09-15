@@ -21,8 +21,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.Net
 {
@@ -40,7 +40,7 @@ namespace SIPSorcery.Net
         private int _cseq = 1;
         private TcpClient _rtspConnection;
         private NetworkStream _rtspStream;
-        private RTSPSession _rtspSession;
+        private RTPSession _rtpSession;
         private int _rtpPayloadHeaderLength;
         private List<RTPFrame> _frames = new List<RTPFrame>();
         private uint _lastCompleteFrameTimestamp;
@@ -165,10 +165,10 @@ namespace SIPSorcery.Net
                 _rtspConnection = new TcpClient(hostname, port);
                 _rtspStream = _rtspConnection.GetStream();
 
-                _rtspSession = new RTSPSession();
-                _rtspSession.RTPPayloadHeaderLength = _rtpPayloadHeaderLength;
-                _rtspSession.ReservePorts();
-                _rtspSession.OnRTPQueueFull += RTPQueueFull;
+                _rtpSession = new RTPSession();
+                _rtpSession.RTPPayloadHeaderLength = _rtpPayloadHeaderLength;
+                _rtpSession.ReservePorts();
+                _rtpSession.OnRTPQueueFull += RTPQueueFull;
 
                 RTSPRequest rtspRequest = new RTSPRequest(RTSPMethodsEnum.SETUP, url);
                 RTSPHeader rtspHeader = new RTSPHeader(_cseq++, null);
@@ -248,8 +248,10 @@ namespace SIPSorcery.Net
         /// </summary>
         public void Play()
         {
-            ThreadPool.QueueUserWorkItem(delegate { ProcessRTPPackets(); });
-            ThreadPool.QueueUserWorkItem(delegate { SendKeepAlives(); });
+            ThreadPool.QueueUserWorkItem(delegate
+            { ProcessRTPPackets(); });
+            ThreadPool.QueueUserWorkItem(delegate
+            { SendKeepAlives(); });
 
             RTSPRequest playRequest = new RTSPRequest(RTSPMethodsEnum.PLAY, _url);
             RTSPHeader playHeader = new RTSPHeader(_cseq++, _rtspSession.SessionID);
@@ -453,8 +455,8 @@ namespace SIPSorcery.Net
                                             //}
                                             //else
                                             //{
-                                                //System.Diagnostics.Debug.WriteLine("RTP frame ready for timestamp " + frame.Timestamp + ".");
-                                                OnFrameReady(this, frame);
+                                            //System.Diagnostics.Debug.WriteLine("RTP frame ready for timestamp " + frame.Timestamp + ".");
+                                            OnFrameReady(this, frame);
                                             //}
                                         }
                                         catch (Exception frameReadyExcp)

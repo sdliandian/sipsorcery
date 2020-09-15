@@ -1,162 +1,357 @@
-| SIPSorcery    | Examples    |
-| ------------- |:-------------
-[![Build status](https://ci.appveyor.com/api/projects/status/1prvhq7jyw0s5fb1/branch/master?svg=true)](https://ci.appveyor.com/project/sipsorcery/sipsorcery/branch/master) | [![Examples build status](https://ci.appveyor.com/api/projects/status/4myf11mda0p69ysm/branch/master?svg=true)](https://ci.appveyor.com/project/sipsorcery/sipsorcery-mre1o/branch/master)
+| Target        | SIPSorcery    | Examples <br/> (Windows Only)    | Softphone <br/> (Windows Only) |
+| --------------| ------------- |:-------------|:--------- |
+| net461        | [![Build status](https://ci.appveyor.com/api/projects/status/1prvhq7jyw0s5fb1/branch/master?svg=true)](https://ci.appveyor.com/project/sipsorcery/sipsorcery/branch/master) | | |
+| netstandard2.0 | ![](https://github.com/sipsorcery/sipsorcery/workflows/sipsorcery-std20/badge.svg) |  |  |
+| dotnetcore3.1 | <table><tr><td>Windows</td><td>![](https://github.com/sipsorcery/sipsorcery/workflows/sipsorcery-core31-win/badge.svg)</td></tr><tr><td>MacOS</td><td>![](https://github.com/sipsorcery/sipsorcery/workflows/sipsorcery-core31-mac/badge.svg)</td></tr><tr><td>Ubuntu</td><td>![](https://github.com/sipsorcery/sipsorcery/workflows/sipsorcery-core31-ubuntu/badge.svg)</td></tr></table> | ![](https://github.com/sipsorcery/sipsorcery/workflows/examples-core31/badge.svg) <br> [![Examples build status](https://ci.appveyor.com/api/projects/status/4myf11mda0p69ysm/branch/master?svg=true)](https://ci.appveyor.com/project/sipsorcery/sipsorcery-mre1o/branch/master) | [![Softphone build status](https://ci.appveyor.com/api/projects/status/xx1bcttkk4gbrd3y/branch/master?svg=true)](https://ci.appveyor.com/project/sipsorcery/sipsorcery-0p6s4/branch/master) |
 
-This repository contains the source for a C# .NET library with full support for the Session Initiation Protocol [(SIP)](https://tools.ietf.org/html/rfc3261) including IPv6 support. In addition 
-there is partial support for the Real-time Transport Protocol [(RTP)](https://tools.ietf.org/html/rfc3550), Web Real-Time Communication [(WebRTC)](https://en.wikipedia.org/wiki/WebRTC) and a number of related protocols such as RTCP, STUN, SDP and RTSP. Work is ongoing to fully support RTP.
 
-This project does not provide any media (audio and video) handling. There are some limited capabilities in the separate [SIPSorcery.Media](https://github.com/sipsorcery/sipsorcery-media) project but they are Windows specific and not suitable for production. This project can be used for SIP signalling and to send and receive RTP packets but it does not have features to do anything with the payloads in the RTP packets.
+## What Is It?
+
+**This fully C# library can be used to add Real-time Communications, typically audio and video calls, to .NET Core applications.**
+
+The diagram below is a high level overview of a Real-time audio and video call between Alice and Bob. It illustrates where the `SIPSorcery` library can help.
+
+![Real-time Communications Overview](./img/sipsorcery_realtime_overview.png)
+
+**Supports both VoIP ([get started](#getting-started-voip)) and WebRTC ([get started](#getting-started-webrtc)).**
+
+**Some of the protocols supported:**
+
+ - Session Initiation Protocol [(SIP)](https://tools.ietf.org/html/rfc3261),
+ - Real-time Transport Protocol [(RTP)](https://tools.ietf.org/html/rfc3550),
+ - Web Real-time Communications [(WebRTC)](https://www.w3.org/TR/webrtc/),
+ - Interactive Connectivity Establishment [(ICE)](https://tools.ietf.org/html/rfc8445),
+ - And more.
+
+**Media End Points - Audio/Video Sinks and Sources:**
+
+ - This library does not provide access to audio and video devices or native codecs. Providing cross platform access on top of .NET Core is a large undertaking. A number of efforts in separate libraries are currently in progress. 
+   - [SIPSorceryMedia.Windows](https://github.com/sipsorcery/SIPSorceryMedia.Windows): Windows specific library that provides audio capture and playback. Also provides [VP8](https://www.webmproject.org/) encoding and decoding functions. The examples in this repository use it.
+   - [SIPSorceryMedia.FFmpeg](https://github.com/sipsorcery/SIPSorceryMedia.FFmpeg): A in-progress effort to provide cross platform audio, video and codec functions using PInvoke and [FFmpeg](https://ffmpeg.org/).
+   - Others: **Contributions welcome**. Frequently requested are Xamarin Forms on Android/iOS and Unix (Linux and/or Mac). New implementations need to implement one or more of the Audio Sink/Source and/or Video Sink/Source interfaces from [SIPSorceryMedia.Abstractions](https://github.com/sipsorcery/SIPSorceryMedia.Abstractions/blob/master/src/V1/MediaEndPoints.cs).
+
+ - This library provides only a small number of audio and video codecs (G711, G722 and MJPEG). Additional codecs, particularly video ones, require C++ libraries. 
 
 ## Installation
 
-The library is compliant with .NET Standard 2.0 and .NET Framework 4.5.2. It is available via NuGet.
+The library is compliant with .NET Standard 2.0 (encompassing .NET Core 2.0+) and .NET Framework 4.6.1 (theoretically also encompassed by `netstandard2.0` but set as an explicit target due to compatibility issues between the two). It is available via NuGet.
 
 For .NET Core:
 
 ````bash
-dotnet add package SIPSorcery
+dotnet add package SIPSorcery -v 4.0.71-pre
 ````
 
 With Visual Studio Package Manager Console (or search for [SIPSorcery on NuGet](https://www.nuget.org/packages/SIPSorcery/)):
 
 ````ps1
-Install-Package SIPSorcery
+Install-Package SIPSorcery -v 4.0.71-pre
 ````
 
 ## Documentation
 
 Class reference documentation and articles explaining common usage are available at [https://sipsorcery.github.io/sipsorcery/](https://sipsorcery.github.io/sipsorcery/).
 
-## Getting Started
+## Getting Started VoIP
 
-The [examples folder](https://github.com/sipsorcery/sipsorcery/tree/master/examples) contains full sample code designed to demonstrate some common use cases. The [GetStarted](https://github.com/sipsorcery/sipsorcery/tree/master/examples/GetStarted) example is the best place to start and the main program is shown below.
+The simplest possible example to place an audio-only SIP call is shown below. This example relies on the Windows specific `SIPSorceryMedia` library to play the received audio and only works on Windows (due to lack of .NET Core audio device support on non-Windows platforms).
+
+````bash
+dotnet new console --name SIPGetStarted -f netcoreapp3.1
+cd SIPGetStarted
+dotnet add package SIPSorcery -v 4.0.71-pre
+dotnet add package SIPSorceryMedia.Windows -v 0.0.18-pre
+code . # If you have Visual Studio Code https://code.visualstudio.com installed.
+# edit Program.cs and paste in the contents below.
+dotnet run
+# if successful you will hear the current time read out.
+ctrl-c
+````
 
 ````csharp
 using System;
-using System.Net;
-using SIPSorcery.SIP;
+using System.Threading.Tasks;
+using SIPSorcery.SIP.App;
+using SIPSorcery.Media;
+using SIPSorceryMedia.Windows;
 
-namespace demo
+namespace SIPGetStarted
 {
-  class Program
-  {
-    static void Main(string[] args)
+    class Program
     {
-      Console.WriteLine("SIPSorcery demo");
-
-      var sipTransport = new SIPTransport();
-      var sipChannel = new SIPUDPChannel(IPAddress.Loopback, 5060);
-      sipTransport.AddSIPChannel(sipChannel);
-
-      sipTransport.SIPTransportRequestReceived += (SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPRequest sipRequest) =>
-      {
-        Console.WriteLine($"Request received {localSIPEndPoint.ToString()}<-{remoteEndPoint.ToString()}: {sipRequest.StatusLine}");
-
-        if (sipRequest.Method == SIPMethodsEnum.OPTIONS)
+         private static string DESTINATION = "time@sipsorcery.com";
+        
+        static async Task Main()
         {
-          SIPResponse optionsResponse = SIPTransport.GetResponse(sipRequest, SIPResponseStatusCodesEnum.Ok, null);
-          sipTransport.SendResponse(optionsResponse);
+            Console.WriteLine("SIP Get Started");
+			
+            var userAgent = new SIPUserAgent();
+            var winAudio = new WindowsAudioEndPoint(new AudioEncoder());
+            var voipMediaSession = new VoIPMediaSession(winAudio.ToMediaEndPoints());
+
+            // Place the call and wait for the result.
+            bool callResult = await userAgent.Call(DESTINATION, null, null, voipMediaSession);
+            Console.WriteLine($"Call result {((callResult) ? "success" : "failure")}.");
+
+            Console.WriteLine("Press any key to hangup and exit.");
+            Console.ReadLine();
         }
-      };
-
-      Console.Write("press any key to exit...");
-      Console.Read();
-
-      sipTransport.Shutdown();
     }
-  }
 }
 ````
 
-To use the SIP functionality the first step is to initialise the `SIPTransport` class. It takes care of things like retransmitting requests and responses, DNS resolution, selecting the next hop for requests, matching SIP messages to transactions and more.
+The [GetStarted](https://github.com/sipsorcery/sipsorcery/tree/master/examples/SIPExamples/GetStarted) example contains the full source and project file for the example above.
 
-The `SIPTransport` class can have multiple SIP channels added to it. A SIP channel is roughly the equivalent to the HTTP connection between a Web Browser and Server. It expects all packets received to be either a SIP request or response. The types of SIP channels supported are UDP, TCP and TLS.
+The three key classes in the above example are described in dedicated articles:
 
-The code below shows how to create a `SIPTransport` instance and add a single UDP channel to it.
+ - [SIPTransport](https://sipsorcery.github.io/sipsorcery/articles/transport.html),
+ - [SIPUserAgent](https://sipsorcery.github.io/sipsorcery/articles/sipuseragent.html),
+ - [RTPSession](https://sipsorcery.github.io/sipsorcery/articles/rtpsession.html).
 
-````csharp
-var sipTransport = new SIPTransport();
-var sipChannel = new SIPUDPChannel(IPAddress.Loopback, 5060);
-sipTransport.AddSIPChannel(sipChannel);
+The [examples folder](https://github.com/sipsorcery/sipsorcery/tree/master/examples/SIPExamples) contains sample code to demonstrate other common SIP/VoIP cases.
+
+## Getting Started WebRTC
+
+The WebRTC specifications do not include directions about how signaling should be done (for VoIP the signaling protocol is SIP; WebRTC has no equivalent). The example below uses a simple JSON message exchange over web sockets for signaling. Part of the reason the `Getting Started WebRTC` is over 5 times as long as the `Getting Started VoIP` is the need for custom signaling.
+
+The example requires two steps:
+
+ - Run the `dotnet` console application,
+ - Open an HTML page in a browser on the same machine.
+
+ The full project file and code are available at [WebRTC Get Started](https://github.com/sipsorcery/sipsorcery/tree/master/examples/WebRTCExamples/WebRTCGetStarted).
+
+The example relies on the Windows specific `SIPSorceryMedia.Windows` package. Hopefully in the future there will be equivalent packages for other platforms.
+
+Step 1:
+
+````bash
+dotnet new console --name WebRTCGetStarted -f netcoreapp3.1
+cd WebRTCGetStarted
+dotnet add package SIPSorcery -v 4.0.71-pre
+dotnet add package SIPSorceryMedia.Windows -v 0.0.18-pre
+dotnet add package Serilog.Sinks.Console
+dotnet add package Serilog.Extensions.Logging
+code . # If you have Visual Studio Code (https://code.visualstudio.com) installed
+# edit Program.cs and paste in the contents below.
+dotnet run
 ````
 
-To shutdown the `SIPTransport` use:
-
 ````csharp
-sipTransport.Shutdown();
-````
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Threading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Serilog;
+using SIPSorcery.Net;
+using SIPSorceryMedia.Windows;
+using WebSocketSharp.Server;
+using SIPSorcery.Media;
+using Serilog.Extensions.Logging;
 
-There are two common scenarios when using the `SIPTransport` class:
-
-1. For a server application wire up the `SIPTransport` event handlers, see code below,
-2. For client applications the `SIPTranpsort` class can be passed as a constructor parameter. There are a number of client user agents in the `app\SIPUserAgents` folder that
-can be used for common client scenarios. See [Next Steps](#next-steps) for a description of the example client applications.
-
-An example of the first approach of wiring up the `SIPTransport` event handlers is shown below. It will respond with a 200 OK response for OPTIONS requests 
-and will ignore all other request types.
-
-````csharp
-sipTransport.SIPTransportRequestReceived += (SIPEndPoint localSIPEndPoint, SIPEndPoint remoteEndPoint, SIPRequest sipRequest) =>
+namespace demo
 {
-  Console.WriteLine($"Request received {localSIPEndPoint.ToString()}<-{remoteEndPoint.ToString()}: {sipRequest.StatusLine}");
+    class Program
+    {
+        private const int WEBSOCKET_PORT = 8081;
+        private const string STUN_URL = "stun:stun.sipsorcery.com";
 
-  if (sipRequest.Method == SIPMethodsEnum.OPTIONS)
-  {
-     SIPResponse optionsResponse = SIPTransport.GetResponse(sipRequest, SIPResponseStatusCodesEnum.Ok, null);
-     sipTransport.SendResponse(optionsResponse);
-  }
-};
+        private static Microsoft.Extensions.Logging.ILogger logger = NullLogger.Instance;
+
+        static void Main()
+        {
+            Console.WriteLine("WebRTC Get Started");
+
+            logger = AddConsoleLogger();
+
+            // Start web socket.
+            Console.WriteLine("Starting web socket server...");
+            var webSocketServer = new WebSocketServer(IPAddress.Any, WEBSOCKET_PORT);
+            webSocketServer.AddWebSocketService<WebRTCWebSocketPeer>("/", (peer) => peer.CreatePeerConnection = CreatePeerConnection);
+            webSocketServer.Start();
+
+            Console.WriteLine($"Waiting for web socket connections on {webSocketServer.Address}:{webSocketServer.Port}...");
+            Console.WriteLine("Press ctrl-c to exit.");
+
+            // Ctrl-c will gracefully exit the call at any point.
+            ManualResetEvent exitMre = new ManualResetEvent(false);
+            Console.CancelKeyPress += delegate (object sender, ConsoleCancelEventArgs e)
+            {
+                e.Cancel = true;
+                exitMre.Set();
+            };
+
+            // Wait for a signal saying the call failed, was cancelled with ctrl-c or completed.
+            exitMre.WaitOne();
+        }
+
+        private static RTCPeerConnection CreatePeerConnection()
+        {
+            RTCConfiguration config = new RTCConfiguration
+            {
+                iceServers = new List<RTCIceServer> { new RTCIceServer { urls = STUN_URL } }
+            };
+            var pc = new RTCPeerConnection(config);
+
+            var testPatternSource = new VideoTestPatternSource();
+            WindowsVideoEndPoint windowsVideoEndPoint = new WindowsVideoEndPoint(true);
+            var audioSource = new AudioExtrasSource(new AudioEncoder(), new AudioSourceOptions { AudioSource = AudioSourcesEnum.Music });
+
+            MediaStreamTrack videoTrack = new MediaStreamTrack(windowsVideoEndPoint.GetVideoSourceFormats(), MediaStreamStatusEnum.SendRecv);
+            pc.addTrack(videoTrack);
+            MediaStreamTrack audioTrack = new MediaStreamTrack(audioSource.GetAudioSourceFormats(), MediaStreamStatusEnum.SendRecv);
+            pc.addTrack(audioTrack);
+
+            testPatternSource.OnVideoSourceRawSample += windowsVideoEndPoint.ExternalVideoSourceRawSample;
+            windowsVideoEndPoint.OnVideoSourceEncodedSample += pc.SendVideo;
+            audioSource.OnAudioSourceEncodedSample += pc.SendAudio;
+            pc.OnVideoFormatsNegotiated += (sdpFormat) =>
+                windowsVideoEndPoint.SetVideoSourceFormat(SDPMediaFormatInfo.GetVideoCodecForSdpFormat(sdpFormat.First().FormatCodec));
+            pc.onconnectionstatechange += async (state) =>
+            {
+                logger.LogDebug($"Peer connection state change to {state}.");
+
+                if (state == RTCPeerConnectionState.connected)
+                {
+                    await audioSource.StartAudio();
+                    await windowsVideoEndPoint.StartVideo();
+                    await testPatternSource.StartVideo();
+                }
+                else if (state == RTCPeerConnectionState.failed)
+                {
+                    pc.Close("ice disconnection");
+                }
+                else if (state == RTCPeerConnectionState.closed)
+                {
+                    await testPatternSource.CloseVideo();
+                    await windowsVideoEndPoint.CloseVideo();
+                    await audioSource.CloseAudio();
+                }
+            };
+
+            // Diagnostics.
+            pc.OnReceiveReport += (re, media, rr) => logger.LogDebug($"RTCP Receive for {media} from {re}\n{rr.GetDebugSummary()}");
+            pc.OnSendReport += (media, sr) => logger.LogDebug($"RTCP Send for {media}\n{sr.GetDebugSummary()}");
+            pc.GetRtpChannel().OnStunMessageReceived += (msg, ep, isRelay) => logger.LogDebug($"STUN {msg.Header.MessageType} received from {ep}.");
+            pc.oniceconnectionstatechange += (state) => logger.LogDebug($"ICE connection state change to {state}.");
+
+            return pc;
+        }
+
+        /// <summary>
+        ///  Adds a console logger. Can be omitted if internal SIPSorcery debug and warning messages are not required.
+        /// </summary>
+        private static Microsoft.Extensions.Logging.ILogger AddConsoleLogger()
+        {
+            var seriLogger = new LoggerConfiguration()
+                .Enrich.FromLogContext()
+                .MinimumLevel.Is(Serilog.Events.LogEventLevel.Debug)
+                .WriteTo.Console()
+                .CreateLogger();
+            var factory = new SerilogLoggerFactory(seriLogger);
+            SIPSorcery.LogFactory.Set(factory);
+            return factory.CreateLogger<Program>();
+        }
+    }
+}
 ````
 
-## Testing
+Step 2:
 
-A convenient tool to test SIP applications is [SIPp](https://github.com/SIPp/sipp). The OPTIONS request handling can be tested from Ubuntu or 
-[WSL](https://docs.microsoft.com/en-us/windows/wsl/install-win10) using the steps below.
+Create an HTML file, paste the contents below into it, open it in a browser that supports WebRTC and finally press the `start` button.
+
+````html
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+
+    <script type="text/javascript">
+
+        const STUN_URL = "stun:stun.sipsorcery.com";
+        const WEBSOCKET_URL = "ws://127.0.0.1:8081/"
+
+        var pc, ws;
+
+        async function start() {
+            pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_URL }] });
+
+            pc.ontrack = evt => document.querySelector('#videoCtl').srcObject = evt.streams[0];
+            pc.onicecandidate = evt => evt.candidate && ws.send(JSON.stringify(evt.candidate));
+            await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(stm => stm.getTracks().forEach(track => pc.addTrack(track, stm)));
+
+            ws = new WebSocket(document.querySelector('#websockurl').value, []);
+            ws.onmessage = async function (evt) {
+                if (/^[\{"'\s]*candidate/.test(evt.data)) {
+                    pc.addIceCandidate(JSON.parse(evt.data));
+                }
+                else {
+                    await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(evt.data)));
+                    pc.createAnswer()
+                        .then((answer) => pc.setLocalDescription(answer))
+                        .then(() => ws.send(JSON.stringify(pc.localDescription)));
+                }
+            };
+        };
+
+        async function closePeer() {
+            pc.getSenders().forEach(sender => {
+                sender.track.stop();
+                pc.removeTrack(sender);
+            });
+            await pc.close();
+            await ws.close();
+        };
+
+    </script>
+</head>
+<body>
+    <video controls autoplay="autoplay" id="videoCtl" width="640" height="480"></video>
+    <div>
+        <input type="text" id="websockurl" size="40" />
+        <button type="button" class="btn btn-success" onclick="start();">Start</button>
+        <button type="button" class="btn btn-success" onclick="closePeer();">Close</button>
+    </div>
+</body>
+
+<script>
+    document.querySelector('#websockurl').value = WEBSOCKET_URL;
+</script>
+````
+
+Result:
+
+If successful the browser should display a test pattern image and play a music sample. The `dotnet` console should display a steady stream of RTCP reports.
 
 ````bash
-$ sudo apt install sip-tester
-$ wget https://raw.githubusercontent.com/saghul/sipp-scenarios/master/sipp_uac_options.xml
-$ sipp -sf sipp_uac_options.xml -m 3 127.0.0.1
+...
+[19:40:25 DBG] STUN BindingRequest received from 192.168.0.50:57681.
+[19:40:26 DBG] RTCP Receive for video from 192.168.11.50:57681
+SDES: SSRC=3458092865, CNAME=5+ksoe4uBNfyl5u5
+Sender: SSRC=3458092865, PKTS=18, BYTES=16392
+[19:40:26 DBG] RTCP Receive for video from 192.168.11.50:57681
+Receiver: SSRC=3458092865
+ RR: SSRC=852075017, LOST=0, JITTER=390
+[19:40:26 DBG] STUN BindingRequest received from 192.168.11.50:57681.
+[19:40:27 DBG] RTCP Receive for video from 192.168.11.50:57681
+SDES: SSRC=3458092865, CNAME=5+ksoe4uBNfyl5u5
+Sender: SSRC=3458092865, PKTS=46, BYTES=39676
+[19:40:27 DBG] RTCP Receive for video from 192.168.11.50:57681
+Receiver: SSRC=3458092865
+ RR: SSRC=852075017, LOST=0, JITTER=368
+[19:40:27 DBG] STUN BindingRequest received from 192.168.11.50:57681.
+[19:40:27 DBG] RTCP Receive for audio from 192.168.11.50:57681
+SDES: SSRC=1049319500, CNAME=5+ksoe4uBNfyl5u5
+Sender: SSRC=1049319500, PKTS=106, BYTES=16960
+[19:40:27 DBG] STUN BindingRequest received from 192.168.0.50:57681.
+[19:40:27 DBG] RTCP Receive for video from 192.168.11.50:57681
+Receiver: SSRC=3458092865
+ RR: SSRC=852075017, LOST=0, JITTER=419
+ ...
 ````
 
-If working correctly the message below should appear on the SIPSorcery demo program console:
-
-````bash
-SIPSorcery Getting Started Demo
-press any key to exit...
-Request received udp:127.0.0.1:5060<-udp:127.0.0.1:5061: OPTIONS sip:127.0.0.1:5060 SIP/2.0
-Request received udp:127.0.0.1:5060<-udp:127.0.0.1:5061: OPTIONS sip:127.0.0.1:5060 SIP/2.0
-Request received udp:127.0.0.1:5060<-udp:127.0.0.1:5061: OPTIONS sip:127.0.0.1:5060 SIP/2.0
-````
-
-The SIPp program will also report some test results after a completed test run. In correct operation the `Successful call` row should be greater than 0 and `Failed call` should be 0.
-
-````
--------------------------+---------------------------+--------------------------
-  Successful call        |        0                  |        3
-  Failed call            |        0                  |        0
--------------------------+---------------------------+--------------------------
-````
-
-## Next Steps
-
-Additional example programs are provided to demonstrate how to use the SIPSorcery library in some common scenarios. The example programs are in the `examples` folder.
-
-* [Get Started](https://github.com/sipsorcery/sipsorcery/tree/master/examples/GetStarted): Simplest example. Demonstrates how to initialise a SIP channel and respond to an OPTIONS request.
-
-* [SIP Proxy](https://github.com/sipsorcery/sipsorcery/tree/master/examples/SIPProxy): Expands the `Get Started` example to also handle REGISTER requests. 
-
-* [Registration Client](https://github.com/sipsorcery/sipsorcery/tree/master/examples/UserAgentRegister): Demonstrates how to use the `SIPRegistrationUserAgent` class to register with a SIP Registrar server.
-
-* [SIP Call Client](https://github.com/sipsorcery/sipsorcery/tree/master/examples/UserAgentClient): Demonstrates how to use `SIPClientUserAgent` class to place a call to a SIP server user agent.
- 
-* [SIP Call Server](https://github.com/sipsorcery/sipsorcery/tree/master/examples/UserAgentServer): Demonstrates how to use the `SIPServerUserAgent` class to receive a call from a SIP client user agent.
- 
-* [SoftPhone](https://github.com/sipsorcery/sipsorcery/tree/master/examples/Softphone): A very rudimentary SIP softphone implementation.
-
-* [Get Started Web Socket](https://github.com/sipsorcery/sipsorcery/tree/master/examples/GetStartedWebSocket): An example of how to create a web socket listener to send and receive SIP messages. An explanation of the example is available [here](https://sipsorcery.github.io/sipsorcery/articles/websocket-sipchannel.html).
-
-* [STUN Server](https://github.com/sipsorcery/sipsorcery/tree/master/examples/StunServer): An example of how to create a basic STUN ([RFC3849](https://tools.ietf.org/html/rfc3489)) server. An explanation of the example is available [here](https://sipsorcery.github.io/sipsorcery/articles/stunserver.html).
-
-* [Call Transfer](https://github.com/sipsorcery/sipsorcery/tree/master/examples/CallTransfer): An example of how to transfer a call using a REFER request as specified in [RFC3515](https://tools.ietf.org/html/rfc3515). An explanation of the example is available [here](https://sipsorcery.github.io/sipsorcery/articles/calltransfer.html).
+The [examples folder](https://github.com/sipsorcery/sipsorcery/tree/master/examples/WebRTCExamples) contains sample code to demonstrate other common WebRTC cases.
 

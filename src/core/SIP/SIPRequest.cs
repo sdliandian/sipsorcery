@@ -7,95 +7,67 @@
 // Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 20 Oct 2005	Aaron Clauson	Created, Dublin, Ireland.
+// 20 Oct 2005	Aaron Clauson   Created, Dublin, Ireland.
+// 26 Nov 2019  Aaron Clauson   Added SIPMessageBase inheritance.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
 //-----------------------------------------------------------------------------
 
 using System;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
 
 namespace SIPSorcery.SIP
 {
-    /// <bnf>
-	///  Method SP Request-URI SP SIP-Version CRLF
-	///  *message-header
-	///	 CRLF
-	///	 [ message-body ]
-	///	 
-	///	 Methods: REGISTER, INVITE, ACK, CANCEL, BYE, OPTIONS
-	///	 SIP-Version: SIP/2.0
-	///	 
-	///	 SIP-Version    =  "SIP" "/" 1*DIGIT "." 1*DIGIT
-	/// </bnf>
-	public class SIPRequest
-	{
-        private static ILogger logger = Log.Logger;
-
+    /// <summary>
+    /// Represents a SIP Request.
+    /// </summary>
+    public class SIPRequest : SIPMessageBase
+    {
         private delegate bool IsLocalSIPSocketDelegate(string socket, SIPProtocolsEnum protocol);
 
-		private static string m_CRLF = SIPConstants.CRLF;
-		private static string m_sipFullVersion = SIPConstants.SIP_FULLVERSION_STRING;
-		private static string m_sipVersion = SIPConstants.SIP_VERSION_STRING;
-		private static int m_sipMajorVersion = SIPConstants.SIP_MAJOR_VERSION;
-		private static int m_sipMinorVersion = SIPConstants.SIP_MINOR_VERSION;
+        public string SIPVersion = m_sipFullVersion;
+        public SIPMethodsEnum Method;
+        public string UnknownMethod = null;
 
-		public string SIPVersion = m_sipVersion;
-		public int SIPMajorVersion = m_sipMajorVersion;
-		public int SIPMinorVersion = m_sipMinorVersion;
-		public SIPMethodsEnum Method;
-		public string UnknownMethod = null;
+        /// <summary>
+        /// The SIP request's URI.
+        /// </summary>
+        public SIPURI URI;
 
-		public SIPURI URI;
-		public SIPHeader Header;
-		public string Body;
         public SIPRoute ReceivedRoute;
 
-		public DateTime Created = DateTime.Now;
-		public SIPEndPoint RemoteSIPEndPoint;               // The remote IP socket the request was received from or sent to.
-        public SIPEndPoint LocalSIPEndPoint;                // The local SIP socket the request was received on or sent from.
-
+        /// <summary>
+        /// The first line of the SIP request.
+        /// </summary>
         public string StatusLine
         {
-            get 
+            get
             {
                 string methodStr = (Method != SIPMethodsEnum.UNKNOWN) ? Method.ToString() : UnknownMethod;
-                return methodStr + " " + URI.ToString() + " " + SIPVersion;  
+                return methodStr + " " + URI.ToString() + " " + SIPVersion;
             }
         }
 
-		private SIPRequest()
-		{
-            //Created++;
+        private SIPRequest()
+        { }
+
+        public SIPRequest(SIPMethodsEnum method, string uri)
+        {
+            Method = method;
+            URI = SIPURI.ParseSIPURI(uri);
+            SIPVersion = m_sipFullVersion;
         }
-			
-		public SIPRequest(SIPMethodsEnum method, string uri)
-		{
-            try
-            {
-                Method = method;
-                URI = SIPURI.ParseSIPURI(uri);
-                SIPVersion = m_sipFullVersion;
-            }
-            catch (Exception excp)
-            {
-                logger.LogError("Exception SIPRequest ctor. " + excp.Message);
-                throw;
-            }
-		}
 
         public SIPRequest(SIPMethodsEnum method, SIPURI uri)
         {
-             //Created++;
-             Method = method;
-             URI = uri;
-             SIPVersion = m_sipFullVersion;
+            Method = method;
+            URI = uri;
+            SIPVersion = m_sipFullVersion;
         }
 
-		public static SIPRequest ParseSIPRequest(SIPMessage sipMessage)
-		{
+        public static SIPRequest ParseSIPRequest(SIPMessageBuffer sipMessage)
+        {
             try
             {
                 SIPRequest sipRequest = new SIPRequest();
@@ -143,14 +115,14 @@ namespace SIPSorcery.SIP
                 logger.LogError(sipMessage.RawMessage);
                 throw new SIPValidationException(SIPValidationFieldsEnum.Request, "Unknown error parsing SIP Request");
             }
-		}
+        }
 
         public static SIPRequest ParseSIPRequest(string sipMessageStr)
         {
             try
             {
-                SIPMessage sipMessage = SIPMessage.ParseSIPMessage(sipMessageStr, null, null);
-                return SIPRequest.ParseSIPRequest(sipMessage);
+                SIPMessageBuffer sipMessageBuffer = SIPMessageBuffer.ParseSIPMessage(sipMessageStr, null, null);
+                return SIPRequest.ParseSIPRequest(sipMessageBuffer);
             }
             catch (SIPValidationException)
             {
@@ -164,29 +136,29 @@ namespace SIPSorcery.SIP
             }
         }
 
-		public new string ToString()
-		{
-			try
-			{
-				string message = StatusLine + m_CRLF + this.Header.ToString();
+        public override string ToString()
+        {
+            try
+            {
+                string message = StatusLine + m_CRLF + this.Header.ToString();
 
-				if(Body != null)
-				{
-					message += m_CRLF + Body;
-				}
-				else
-				{
-					message += m_CRLF;
-				}
-			
-				return message;
-			}
-			catch(Exception excp)
-			{
-				logger.LogError("Exception SIPRequest ToString. " + excp.Message);
-				throw excp;
-			}
-		}
+                if (Body != null)
+                {
+                    message += m_CRLF + Body;
+                }
+                else
+                {
+                    message += m_CRLF;
+                }
+
+                return message;
+            }
+            catch (Exception excp)
+            {
+                logger.LogError("Exception SIPRequest ToString. " + excp.Message);
+                throw excp;
+            }
+        }
 
         /// <summary>
         /// Creates an identical copy of the SIP Request for the caller.
@@ -194,49 +166,70 @@ namespace SIPSorcery.SIP
         /// <returns>New copy of the SIPRequest.</returns>
         public SIPRequest Copy()
         {
-            return ParseSIPRequest(this.ToString());
-        }
-		
-		public string CreateBranchId()
-		{
-			string routeStr = (Header.Routes != null) ? Header.Routes.ToString() : null;
-			string toTagStr = (Header.To != null) ? Header.To.ToTag : null;
-			string fromTagStr = (Header.From != null) ? Header.From.FromTag : null;
-			string topViaStr = (Header.Vias != null && Header.Vias.TopViaHeader != null) ? Header.Vias.TopViaHeader.ToString() : null;
+            SIPRequest copy = new SIPRequest();
+            copy.SIPVersion = SIPVersion;
+            //copy.SIPMajorVersion = m_sipMajorVersion;
+            //copy.SIPMinorVersion = m_sipMinorVersion;
+            copy.Method = Method;
+            copy.UnknownMethod = UnknownMethod;
+            copy.URI = URI?.CopyOf();
+            copy.Header = Header?.Copy();
+            copy.Body = Body;
 
-			return CallProperties.CreateBranchId(
-				SIPConstants.SIP_BRANCH_MAGICCOOKIE,
-				toTagStr,
-				fromTagStr,
-				Header.CallId,
-				URI.ToString(),
-				topViaStr,
-				Header.CSeq,
-				routeStr,
-				Header.ProxyRequire,
-				null);
-		}
-		
-		/// <summary>
-		/// Determines if this SIP header is a looped header. The basis for the decision is the branchid in the Via header. If the branchid for a new
-		/// header computes to the same branchid as a Via header already in the SIP header then it is considered a loop.
-		/// </summary>
-		/// <returns>True if this header is a loop otherwise false.</returns>
-		public bool IsLoop(string ipAddress, int port, string currentBranchId)
-		{			
-			foreach(SIPViaHeader viaHeader in Header.Vias.Via)
-			{
-				if(viaHeader.Host == ipAddress && viaHeader.Port == port)
-				{
-					if(viaHeader.Branch == currentBranchId)
-					{
-						return true;
-					}
-				}
-			}
-				
-			return false;
-		}
+            if (ReceivedRoute != null)
+            {
+                copy.ReceivedRoute = new SIPRoute(ReceivedRoute.URI, !ReceivedRoute.IsStrictRouter);
+            }
+
+            copy.Created = Created;
+            copy.LocalSIPEndPoint = LocalSIPEndPoint?.CopyOf();
+            copy.RemoteSIPEndPoint = RemoteSIPEndPoint?.CopyOf();
+            copy.SendFromHintChannelID = SendFromHintChannelID;
+            copy.SendFromHintConnectionID = SendFromHintConnectionID;
+
+            return copy;
+        }
+
+        public string CreateBranchId()
+        {
+            string routeStr = (Header.Routes != null) ? Header.Routes.ToString() : null;
+            string toTagStr = (Header.To != null) ? Header.To.ToTag : null;
+            string fromTagStr = (Header.From != null) ? Header.From.FromTag : null;
+            string topViaStr = (Header.Vias != null && Header.Vias.TopViaHeader != null) ? Header.Vias.TopViaHeader.ToString() : null;
+
+            return CallProperties.CreateBranchId(
+                SIPConstants.SIP_BRANCH_MAGICCOOKIE,
+                toTagStr,
+                fromTagStr,
+                Header.CallId,
+                URI.ToString(),
+                topViaStr,
+                Header.CSeq,
+                routeStr,
+                Header.ProxyRequire,
+                null);
+        }
+
+        /// <summary>
+        /// Determines if this SIP header is a looped header. The basis for the decision is the branchid in the Via header. If the branchid for a new
+        /// header computes to the same branchid as a Via header already in the SIP header then it is considered a loop.
+        /// </summary>
+        /// <returns>True if this header is a loop otherwise false.</returns>
+        public bool IsLoop(string ipAddress, int port, string currentBranchId)
+        {
+            foreach (SIPViaHeader viaHeader in Header.Vias.Via)
+            {
+                if (viaHeader.Host == ipAddress && viaHeader.Port == port)
+                {
+                    if (viaHeader.Branch == currentBranchId)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         public bool IsValid(out SIPValidationFieldsEnum errorField, out string errorMessage)
         {
@@ -252,5 +245,65 @@ namespace SIPSorcery.SIP
 
             return true;
         }
-	}
+
+        /// <summary>
+        /// Sets the send from hints for this request based on a local SIP end point.
+        /// The local SIP end point should generally be the one a related request or response was
+        /// received on.
+        /// </summary>
+        /// <param name="localEndPoint">The SIP end point to base the send from hints on.</param>
+        public void SetSendFromHints(SIPEndPoint localEndPoint)
+        {
+            SendFromHintChannelID = localEndPoint?.ChannelID;
+            SendFromHintConnectionID = localEndPoint?.ConnectionID;
+        }
+
+        /// <summary>
+        /// Builds a very basic SIP request. In most cases additional headers will need to be added in order for it to be useful.
+        /// When this method is called the channel used for sending the request has not been decided. The headers below depend on 
+        /// the sending channel. By setting them to "0.0.0.0:0" the send request methods will substitute in the appropriate value
+        /// at send time:
+        /// - Top Via header.
+        /// - From header.
+        /// - Contact header.
+        /// </summary>
+        /// <param name="method">The method for the SIP request.</param>
+        /// <param name="uri">The destination URI for the request.</param>
+        /// <returns>A SIP request object.</returns>
+        public static SIPRequest GetRequest(SIPMethodsEnum method, SIPURI uri)
+        {
+            return GetRequest(
+                method,
+                uri,
+                new SIPToHeader(null, new SIPURI(uri.User, uri.Host, null, uri.Scheme, SIPProtocolsEnum.udp), null),
+                SIPFromHeader.GetDefaultSIPFromHeader(uri.Scheme));
+        }
+
+        /// <summary>
+        /// Builds a very basic SIP request. In most cases additional headers will need to be added in order for it to be useful.
+        /// When this method is called the channel used for sending the request has not been decided. The headers below depend on 
+        /// the sending channel. By setting them to "0.0.0.0:0" the send request methods will substitute in the appropriate value
+        /// at send time:
+        /// - Top Via header.
+        /// - From header.
+        /// - Contact header.
+        /// </summary>
+        /// <param name="method">The method for the SIP request.</param>
+        /// <param name="uri">The destination URI for the request.</param>
+        /// <param name="to">The To header for the request.</param>
+        /// <param name="from">The From header for the request.</param>
+        /// <returns>A SIP request object.</returns>
+        public static SIPRequest GetRequest(SIPMethodsEnum method, SIPURI uri, SIPToHeader to, SIPFromHeader from)
+        {
+            SIPRequest request = new SIPRequest(method, uri);
+
+            SIPHeader header = new SIPHeader(from, to, 1, CallProperties.CreateNewCallId());
+            request.Header = header;
+            header.CSeqMethod = method;
+            header.Allow = m_allowedSIPMethods;
+            header.Vias.PushViaHeader(SIPViaHeader.GetDefaultSIPViaHeader());
+
+            return request;
+        }
+    }
 }

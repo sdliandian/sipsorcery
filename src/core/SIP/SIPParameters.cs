@@ -4,22 +4,21 @@
 // Description: SIP parameters as used in Contact, To, From and Via SIP headers.
 //
 // Author(s):
-// Aaron Clauson
+// Aaron Clauson (aaron@sipsorcery.com)
 //
 // History:
-// 06 May 2006	Aaron Clauson	Created (aaron@sipsorcery.com), SIP Sorcery PTY LTD, Hobart, Australia (www.sipsorcery.com).
+// 06 May 2006	Aaron Clauson	Created, Dublin, Ireland.
 //
 // License: 
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
 //-----------------------------------------------------------------------------
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.Serialization;
-using System.Text;
-using SIPSorcery.Sys;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.Sys;
 
 namespace SIPSorcery.SIP
 {
@@ -27,7 +26,7 @@ namespace SIPSorcery.SIP
     /// Represents a series of name value pairs that are optionally included in SIP URIs and also as an additional
     /// optional setting on some SIP Headers (Contact, To, From, Via).
     /// This class also treats the header value of a SIP URI as a special case of a SIP parameter. The difference between
-    /// a paramter and a SIP URI header is the start and delimiter characters used.
+    /// a parameter and a SIP URI header is the start and delimiter characters used.
     ///
     /// <code>
     /// <![CDATA[
@@ -37,19 +36,14 @@ namespace SIPSorcery.SIP
     /// SIP URI with headers:
     /// sip:1234@sip.com?key1=value1&key2=value2
     /// 
-    /// SIP URI with parameters and headers (paramters always come first):
+    /// SIP URI with parameters and headers (parameters always come first):
     /// sip:1234@sip.com;key1=value1;key2=value2?key1=value1&key2=value2
     /// ]]>
     /// </code>
-    /// 
-    /// <code>
-    /// generic-param  =  token [ EQUAL gen-value ]
-    /// gen-value      =  token / host / quoted-string
-    /// </code>
     /// </summary>
     [DataContract]
-	public class SIPParameters
-	{
+    public class SIPParameters
+    {
         private const char TAG_NAME_VALUE_SEPERATOR = '=';
         private const char QUOTE = '"';
         private const char BACK_SLASH = '\\';
@@ -60,22 +54,30 @@ namespace SIPSorcery.SIP
         [DataMember]
         public char TagDelimiter = DEFAULT_PARAMETER_DELIMITER;
 
-        //[IgnoreDataMember]
         [DataMember]
-        public Dictionary<string, string> m_dictionary = new Dictionary<string, string>(StringComparer.CurrentCultureIgnoreCase);
+        public Dictionary<string, string> m_dictionary;
 
         [IgnoreDataMember]
         public int Count
         {
-            get { return (m_dictionary != null) ? m_dictionary.Count : 0;  }
+            get { return (m_dictionary != null) ? m_dictionary.Count : 0; }
         }
-        
+
+        internal SIPParameters()
+        {
+            m_dictionary = new Dictionary<string, string>(StringComparer.InvariantCultureIgnoreCase);
+        }
+
         /// <summary>
         /// Parses the name value pairs from a SIP parameter or header string.
         /// </summary>
-        public SIPParameters(string sipString, char delimiter)
+        public SIPParameters(string sipString, char delimiter) :
+            this()
         {
-            Initialise(sipString, delimiter);
+            if (!String.IsNullOrEmpty(sipString))
+            {
+                Initialise(sipString, delimiter);
+            }
         }
 
         private void Initialise(string sipString, char delimiter)
@@ -90,7 +92,7 @@ namespace SIPSorcery.SIP
                 {
                     AddKeyValuePair(keyValuePair, m_dictionary);
                 }
-            }   
+            }
         }
 
         public static string[] GetKeyValuePairsFromQuoted(string quotedString, char delimiter)
@@ -103,9 +105,9 @@ namespace SIPSorcery.SIP
                 {
                     return null;
                 }
-                else if(quotedString.IndexOf(delimiter) == -1)
+                else if (quotedString.IndexOf(delimiter) == -1)
                 {
-                    return new string[] {quotedString};
+                    return new string[] { quotedString };
                 }
                 else
                 {
@@ -285,15 +287,20 @@ namespace SIPSorcery.SIP
             }
         }
 
-        public new string ToString() {
+        public override string ToString()
+        {
             string paramStr = null;
 
-            if (m_dictionary != null) {
-                foreach (KeyValuePair<string, string> param in m_dictionary) {
-                    if (param.Value != null && param.Value.Trim().Length > 0) {
+            if (m_dictionary != null)
+            {
+                foreach (KeyValuePair<string, string> param in m_dictionary)
+                {
+                    if (param.Value != null && param.Value.Trim().Length > 0)
+                    {
                         paramStr += TagDelimiter + param.Key + TAG_NAME_VALUE_SEPERATOR + SIPEscape.SIPURIParameterEscape(param.Value);
                     }
-                    else {
+                    else
+                    {
                         paramStr += TagDelimiter + param.Key;
                     }
                 }
@@ -304,32 +311,60 @@ namespace SIPSorcery.SIP
 
         public override int GetHashCode()
         {
-            if (m_dictionary != null && m_dictionary.Count > 0)
-            {
-                SortedList sortedParams = new SortedList();
-                foreach (KeyValuePair<string, string> param in m_dictionary)
-                {
-                    sortedParams.Add(param.Key.ToLower(), (string)param.Value);
-                }
-
-                StringBuilder sortedParamBuilder = new StringBuilder();
-                foreach (DictionaryEntry sortedEntry in sortedParams)
-                {
-                    sortedParamBuilder.Append((string)sortedEntry.Key + (string)sortedEntry.Value);
-                }
-
-                return sortedParamBuilder.ToString().GetHashCode();
-            }
-            else
-            {
-                return 0;
-            }
+            return (m_dictionary == null) ? 0 : m_dictionary.GetHashCode();
         }
 
         public SIPParameters CopyOf()
         {
-            SIPParameters copy = new SIPParameters(ToString(), TagDelimiter);
+            SIPParameters copy = new SIPParameters();
+            copy.TagDelimiter = this.TagDelimiter;
+            copy.m_dictionary = (this.m_dictionary != null) ? new Dictionary<string, string>(this.m_dictionary) : new Dictionary<string, string>();
             return copy;
-        }						
-	}
+        }
+
+        public static bool AreEqual(SIPParameters params1, SIPParameters params2)
+        {
+            return params1 == params2;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return AreEqual(this, (SIPParameters)obj);
+        }
+
+        /// <summary>
+        /// Two SIPParameters objects are considered equal if they have the same keys and values. The
+        /// order of the keys does not affect the equality comparison.
+        /// </summary>
+        public static bool operator ==(SIPParameters x, SIPParameters y)
+        {
+            if (x is null && y is null)
+            {
+                return true;
+            }
+            else if (x is null || y is null)
+            {
+                return false;
+            }
+            else if (x.m_dictionary == null && y.m_dictionary == null)
+            {
+                return true;
+            }
+            else if (x.m_dictionary == null || y.m_dictionary == null)
+            {
+                return false;
+            }
+
+            return x.m_dictionary.Count == y.m_dictionary.Count &&
+               x.m_dictionary.Keys.All(k => y.m_dictionary.ContainsKey(k)
+               && String.Equals(x.m_dictionary[k], y.m_dictionary[k], StringComparison.InvariantCultureIgnoreCase));
+
+            //return x.m_dictionary.Count == y.m_dictionary.Count && !x.m_dictionary.Except(y.m_dictionary).Any();
+        }
+
+        public static bool operator !=(SIPParameters x, SIPParameters y)
+        {
+            return !(x == y);
+        }
+    }
 }

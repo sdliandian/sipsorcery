@@ -32,7 +32,6 @@ namespace SIPSorcery.Net
 
         public const int INITIAL_RTT_MILLISECONDS = 500;                // RFC2326 9.2, initial round trip time used for retransmits on unreliable transports.
         public const int RTSP_MAXIMUM_LENGTH = 4096;
-
     }
 
     public enum RTSPMessageTypesEnum
@@ -158,5 +157,5 @@ namespace SIPSorcery.Net
             return (RTSPResponseStatusCodesEnum)Enum.Parse(typeof(RTSPResponseStatusCodesEnum), statusCode.ToString(), true);
         }
     }
-	
+
 }

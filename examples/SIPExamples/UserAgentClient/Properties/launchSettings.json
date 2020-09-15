@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "UserAgentClient": {
+      "commandName": "Project",
+      "commandLineArgs": "music@dontxxxx.exist.com"
+    }
+  }
+}
